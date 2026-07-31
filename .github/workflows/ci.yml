@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   verify:
-    name: Lint, unit, build, package smoke
+    name: Lint, typecheck, unit, build, audit, consumer
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -23,16 +23,18 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm install -g sfw@2.0.6
+      - run: sfw --version
+      - run: sfw npm ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npm run build
-      - run: npm audit
+      - run: sfw npm audit
       - run: npm run test:consumer
 
   integration:
-    name: Integration (${{ matrix.os }}, Node ${{ matrix.node-version }}, Pi ${{ matrix.pi-version }})
+    name: Integration (${{ matrix.os }}, Node ${{ matrix.node-version }})
     needs: verify
     runs-on: ${{ matrix.os }}
     strategy:
@@ -40,15 +42,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         node-version: [22, 24]
-        pi-version: [0.74.2, 0.75.4]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm ci
-      - name: Install Pi ${{ matrix.pi-version }}
-        run: npm install --no-save @earendil-works/pi-agent-core@${{ matrix.pi-version }} @earendil-works/pi-ai@${{ matrix.pi-version }} @earendil-works/pi-coding-agent@${{ matrix.pi-version }}
+      - run: npm install -g sfw@2.0.6
+      - run: sfw --version
+      - run: sfw npm ci
       - run: npm run build
       - run: npm run test:integration

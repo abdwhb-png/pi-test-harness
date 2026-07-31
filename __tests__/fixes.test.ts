@@ -6,13 +6,21 @@
  *   2. No double-wrap on multiple run() calls
  *   3. ToolBlockedError exported and instanceof-checkable
  *   4. safeRmSync swallows EPERM / handles missing files
+ *   5. Mock handler ToolResult {isError:true} recorded as error despite Pi 0.83
  */
 
 import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createTestSession, when, calls, says, ToolBlockedError, safeRmSync } from "../src/index.js";
+import {
+	createTestSession,
+	when,
+	calls,
+	says,
+	ToolBlockedError,
+	safeRmSync,
+} from "../src/index.js";
 import { _isLockedFileError } from "../src/utils.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -48,10 +56,7 @@ describe("toolResultsFor without mockTools", () => {
 		});
 
 		await t.run(
-			when("Call the counter", [
-				calls("counter_tool", {}),
-				says("Done."),
-			]),
+			when("Call the counter", [calls("counter_tool", {}), says("Done.")]),
 		);
 
 		// Before fix: toolResultsFor always returned [] without mockTools
@@ -69,12 +74,7 @@ describe("toolResultsFor without mockTools", () => {
 			extensionFactories: [counterToolFactory(hits)],
 		});
 
-		await t.run(
-			when("Call it", [
-				calls("counter_tool", {}),
-				says("Done."),
-			]),
-		);
+		await t.run(when("Call it", [calls("counter_tool", {}), says("Done.")]));
 
 		expect(t.events.toolCallsFor("counter_tool")).toHaveLength(1);
 		expect(t.events.toolSequence()).toContain("counter_tool");
@@ -100,10 +100,7 @@ describe("multiple run() calls — no double-wrap", () => {
 
 		// First run — one tool call
 		await t.run(
-			when("First", [
-				calls("counter_tool", {}),
-				says("Done with first."),
-			]),
+			when("First", [calls("counter_tool", {}), says("Done with first.")]),
 		);
 
 		expect(t.events.toolResultsFor("counter_tool")).toHaveLength(1);
@@ -111,10 +108,7 @@ describe("multiple run() calls — no double-wrap", () => {
 
 		// Second run — one more tool call, total should be 2 (not 3 or 4 from double-wrap)
 		await t.run(
-			when("Second", [
-				calls("counter_tool", {}),
-				says("Done with second."),
-			]),
+			when("Second", [calls("counter_tool", {}), says("Done with second.")]),
 		);
 
 		// Before fix: second run re-wrapped already-wrapped tools → double collection
@@ -184,7 +178,10 @@ describe("blocked tool classification in execution flow", () => {
 					// Block the custom tool via tool_call hook
 					pi.on("tool_call", async (event: any) => {
 						if (event.toolName === "my_blocked_tool") {
-							return { block: true, reason: "Tool execution was blocked by an extension" };
+							return {
+								block: true,
+								reason: "Tool execution was blocked by an extension",
+							};
 						}
 					});
 					const { Type } = require("typebox");
@@ -212,12 +209,7 @@ describe("blocked tool classification in execution flow", () => {
 		});
 
 		// Should not throw even though the tool is blocked
-		await t.run(
-			when("Call it", [
-				calls("my_blocked_tool", {}),
-				says("Done."),
-			]),
-		);
+		await t.run(when("Call it", [calls("my_blocked_tool", {}), says("Done.")]));
 
 		const results = t.events.toolResultsFor("my_blocked_tool");
 		expect(results).toHaveLength(1);
@@ -251,11 +243,18 @@ describe("safeRmSync", () => {
 		expect(existsSync(file)).toBe(false);
 
 		// Cleanup dir
-		try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+		try {
+			rmSync(dir, { recursive: true, force: true });
+		} catch {
+			/* ignore */
+		}
 	});
 
 	it("does not throw when file does not exist", () => {
-		const missing = join(tmpdir(), "pi-test-definitely-does-not-exist-12345.db");
+		const missing = join(
+			tmpdir(),
+			"pi-test-definitely-does-not-exist-12345.db",
+		);
 		expect(() => safeRmSync(missing)).not.toThrow();
 	});
 
@@ -267,29 +266,70 @@ describe("safeRmSync", () => {
 		safeRmSync(file); // first call deletes
 		expect(() => safeRmSync(file)).not.toThrow(); // second call: file gone, no throw
 
-		try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+		try {
+			rmSync(dir, { recursive: true, force: true });
+		} catch {
+			/* ignore */
+		}
 	});
 
 	// vi.spyOn cannot mock native ESM node: modules (namespace not configurable).
 	// Instead we test the error-filtering predicate directly — it's the only
 	// logic safeRmSync adds on top of rmSync.
 	it("_isLockedFileError: EPERM is a lock error", () => {
-		const err = Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
+		const err = Object.assign(new Error("EPERM: operation not permitted"), {
+			code: "EPERM",
+		});
 		expect(_isLockedFileError(err)).toBe(true);
 	});
 
 	it("_isLockedFileError: EBUSY is a lock error", () => {
-		const err = Object.assign(new Error("EBUSY: resource busy or locked"), { code: "EBUSY" });
+		const err = Object.assign(new Error("EBUSY: resource busy or locked"), {
+			code: "EBUSY",
+		});
 		expect(_isLockedFileError(err)).toBe(true);
 	});
 
 	it("_isLockedFileError: EISDIR is NOT a lock error (safeRmSync re-throws it)", () => {
-		const err = Object.assign(new Error("EISDIR: illegal operation on a directory"), { code: "EISDIR" });
+		const err = Object.assign(
+			new Error("EISDIR: illegal operation on a directory"),
+			{ code: "EISDIR" },
+		);
 		expect(_isLockedFileError(err)).toBe(false);
 	});
 
 	it("_isLockedFileError: EACCES is NOT a lock error", () => {
-		const err = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+		const err = Object.assign(new Error("EACCES: permission denied"), {
+			code: "EACCES",
+		});
 		expect(_isLockedFileError(err)).toBe(false);
+	});
+});
+
+describe("mock handler isError propagation (Pi 0.83 fix)", () => {
+	it("records isError=true when mock returns ToolResult with isError: true", async () => {
+		const t = await createTestSession({
+			mockTools: {
+				// bash is a real built-in tool — the mock replaces its execute()
+				bash: {
+					content: [{ type: "text", text: "simulated failure" }],
+					isError: true,
+				},
+			},
+		});
+
+		await t.run(
+			when("Run the failing command", [
+				calls("bash", { command: "false" }),
+				says("Done."),
+			]),
+		);
+
+		const result = t.events.toolResultsFor("bash")[0];
+		expect(result).toBeDefined();
+		expect(result.isError).toBe(true);
+		expect(result.text).toBe("simulated failure");
+
+		t.dispose();
 	});
 });

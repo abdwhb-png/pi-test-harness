@@ -1,5 +1,5 @@
 /**
- * @marcfargas/pi-test-harness
+ * @abdwhb-png/pi-test-harness
  *
  * Test harness for pi extensions — playbook-based model mocking,
  * session testing, sandbox install verification.

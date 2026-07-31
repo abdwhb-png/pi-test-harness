@@ -11,13 +11,49 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { execSync } from "node:child_process";
-import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { execFileSync } from "node:child_process";
+import {
+	DefaultResourceLoader,
+	SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 import type { SandboxOptions, SandboxResult } from "./types.js";
 import { createTestSession } from "./session.js";
 
-export async function verifySandboxInstall(options: SandboxOptions): Promise<SandboxResult> {
+/** Resolve the npm command array. Defaults to platform-aware npm. */
+function resolveNpmCommand(npmCommand?: string[]): string[] {
+	if (npmCommand && npmCommand.length > 0) return npmCommand;
+	return [process.platform === "win32" ? "npm.cmd" : "npm"];
+}
+
+/**
+ * Run a command via execFileSync with safe string conversion for the full
+ * command line in the error message.
+ */
+function run(args: string[], cwd: string, label: string): string {
+	const [cmd, ...cmdArgs] = args;
+	try {
+		return execFileSync(cmd, cmdArgs, {
+			cwd,
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+		}).trim();
+	} catch (err: any) {
+		// Enhance the error message with context
+		const stderr = err.stderr?.toString().trim() ?? "";
+		const enhanced = new Error(
+			`${label} failed: ${err.message}${stderr ? `\nstderr: ${stderr}` : ""}`,
+		);
+		// Preserve the original error code (ENOENT, etc.)
+		(enhanced as any).code = err.code;
+		throw enhanced;
+	}
+}
+
+export async function verifySandboxInstall(
+	options: SandboxOptions,
+): Promise<SandboxResult> {
 	const packageDir = path.resolve(options.packageDir);
+	const npmCmd = resolveNpmCommand(options.npmCommand);
 
 	// Validate package directory
 	const pkgJsonPath = path.join(packageDir, "package.json");
@@ -32,11 +68,12 @@ export async function verifySandboxInstall(options: SandboxOptions): Promise<San
 
 	try {
 		// 1. npm pack → tarball
-		const packOutput = execSync("npm pack --pack-destination .", {
-			cwd: packageDir,
-			encoding: "utf-8",
-			stdio: ["pipe", "pipe", "pipe"],
-		}).trim();
+		const packArgs = [...npmCmd.slice(1), "pack", "--pack-destination", "."];
+		const packOutput = run(
+			[...npmCmd.slice(0, 1), ...packArgs],
+			packageDir,
+			`npm pack in ${packageDir}`,
+		);
 
 		// The output is the tarball filename
 		const tarballName = packOutput.split("\n").pop()!.trim();
@@ -46,7 +83,11 @@ export async function verifySandboxInstall(options: SandboxOptions): Promise<San
 			fs.copyFileSync(tarballSrc, tarballDest);
 		} finally {
 			// Always clean up tarball from source (even if copy fails)
-			try { if (fs.existsSync(tarballSrc)) fs.unlinkSync(tarballSrc); } catch { /* best-effort */ }
+			try {
+				if (fs.existsSync(tarballSrc)) fs.unlinkSync(tarballSrc);
+			} catch {
+				/* best-effort */
+			}
 		}
 
 		// 2. Create minimal package.json in sandbox
@@ -64,14 +105,23 @@ export async function verifySandboxInstall(options: SandboxOptions): Promise<San
 		);
 
 		// 3. npm install
-		execSync("npm install --ignore-scripts=false", {
-			cwd: sandboxDir,
-			encoding: "utf-8",
-			stdio: ["pipe", "pipe", "pipe"],
-		});
+		const installArgs = [
+			...npmCmd.slice(1),
+			"install",
+			"--ignore-scripts=false",
+		];
+		run(
+			[...npmCmd.slice(0, 1), ...installArgs],
+			sandboxDir,
+			`npm install in ${sandboxDir}`,
+		);
 
 		// 4. Find the installed package and use DefaultResourceLoader
-		const installedPkgDir = path.join(sandboxDir, "node_modules", ...pkgName.split("/"));
+		const installedPkgDir = path.join(
+			sandboxDir,
+			"node_modules",
+			...pkgName.split("/"),
+		);
 
 		if (!fs.existsSync(installedPkgDir)) {
 			throw new Error(`Package not found after install: ${installedPkgDir}`);
@@ -94,7 +144,9 @@ export async function verifySandboxInstall(options: SandboxOptions): Promise<San
 					// Try as glob/directory
 					const dir = path.resolve(installedPkgDir, ext);
 					if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
-						const files = fs.readdirSync(dir).filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
+						const files = fs
+							.readdirSync(dir)
+							.filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
 						extensionPaths.push(...files.map((f) => path.join(dir, f)));
 					}
 				}
@@ -114,10 +166,10 @@ export async function verifySandboxInstall(options: SandboxOptions): Promise<San
 		const extensionsResult = loader.getExtensions();
 		const skillsResult = loader.getSkills();
 
-		// Collect tool names from loaded extensions
+		// Collect tool names from loaded extensions (no cast needed)
 		const toolNames: string[] = [];
 		for (const ext of extensionsResult.extensions) {
-			for (const [name] of (ext as any).tools ?? new Map()) {
+			for (const [name] of ext.tools ?? new Map()) {
 				toolNames.push(name);
 			}
 		}
@@ -125,7 +177,9 @@ export async function verifySandboxInstall(options: SandboxOptions): Promise<San
 		const result: SandboxResult = {
 			loaded: {
 				extensions: extensionsResult.extensions.length,
-				extensionErrors: extensionsResult.errors.map((e) => `${e.path}: ${e.error}`),
+				extensionErrors: extensionsResult.errors.map(
+					(e) => `${e.path}: ${e.error}`,
+				),
 				tools: toolNames,
 				skills: skillsResult.skills.length,
 			},
@@ -176,7 +230,12 @@ export async function verifySandboxInstall(options: SandboxOptions): Promise<San
 		// Clean up sandbox (retry for Windows EBUSY on open handles)
 		if (fs.existsSync(sandboxDir)) {
 			try {
-				fs.rmSync(sandboxDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+				fs.rmSync(sandboxDir, {
+					recursive: true,
+					force: true,
+					maxRetries: 3,
+					retryDelay: 200,
+				});
 			} catch {
 				// Best-effort cleanup — temp dir will be cleaned by OS
 			}

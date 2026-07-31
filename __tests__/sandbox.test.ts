@@ -8,6 +8,7 @@ describe("verifySandboxInstall", () => {
 	it("installs and loads a dummy extension package", async () => {
 		const result = await verifySandboxInstall({
 			packageDir: DUMMY_EXTENSION,
+			npmCommand: ["sfw", "npm"],
 			expect: {
 				extensions: 1,
 				tools: ["dummy_tool"],
@@ -23,6 +24,7 @@ describe("verifySandboxInstall", () => {
 		await expect(
 			verifySandboxInstall({
 				packageDir: DUMMY_EXTENSION,
+				npmCommand: ["sfw", "npm"],
 				expect: {
 					extensions: 1,
 					tools: ["nonexistent_tool"],
@@ -35,6 +37,7 @@ describe("verifySandboxInstall", () => {
 		await expect(
 			verifySandboxInstall({
 				packageDir: DUMMY_EXTENSION,
+				npmCommand: ["sfw", "npm"],
 				expect: {
 					extensions: 5, // wrong
 				},
@@ -45,6 +48,7 @@ describe("verifySandboxInstall", () => {
 	it("runs a smoke test in the sandbox", async () => {
 		const result = await verifySandboxInstall({
 			packageDir: DUMMY_EXTENSION,
+			npmCommand: ["sfw", "npm"],
 			expect: {
 				extensions: 1,
 				tools: ["dummy_tool"],
@@ -67,6 +71,33 @@ describe("verifySandboxInstall", () => {
 
 		expect(result.smoke).toBeDefined();
 		expect(result.smoke!.events.toolResultsFor("dummy_tool")).toHaveLength(1);
-		expect(result.smoke!.events.toolResultsFor("dummy_tool")[0].text).toBe("echo: hello");
+		expect(result.smoke!.events.toolResultsFor("dummy_tool")[0].text).toBe(
+			"echo: hello",
+		);
 	}, 60_000); // smoke test includes full session setup
+
+	describe("npmCommand option", () => {
+		it("throws ENOENT for a nonexistent npm command", async () => {
+			await expect(
+				verifySandboxInstall({
+					packageDir: DUMMY_EXTENSION,
+					npmCommand: ["commande-pi-test-harness-inexistante"],
+				}),
+			).rejects.toThrow(/ENOENT/);
+		}, 10_000);
+
+		it("uses sfw npm for pack when npmCommand is sfw", async () => {
+			const result = await verifySandboxInstall({
+				packageDir: DUMMY_EXTENSION,
+				npmCommand: ["sfw", "npm"],
+				expect: {
+					extensions: 1,
+					tools: ["dummy_tool"],
+				},
+			});
+			expect(result.loaded.extensionErrors).toEqual([]);
+			expect(result.loaded.extensions).toBe(1);
+			expect(result.loaded.tools).toContain("dummy_tool");
+		}, 30_000);
+	});
 });

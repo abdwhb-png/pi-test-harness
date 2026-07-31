@@ -1,26 +1,32 @@
-# @marcfargas/pi-test-harness
+# @abdwhb-png/pi-test-harness
 
 Test harness for [pi](https://github.com/earendil-works/pi-coding-agent) extensions — in-process session testing with playbook-driven model mocking, package install verification, and subprocess mocking.
+
+**Pi 0.83.x only.** This fork drops support for Pi <0.83.0. Requires `@earendil-works/pi-agent-core@^0.83.0`, `@earendil-works/pi-ai@^0.83.0`, and `@earendil-works/pi-coding-agent@^0.83.0`.
 
 ## Why
 
 Testing pi extensions is hard. Extensions register tools, subscribe to hooks, intercept tool calls, use UI — all deeply integrated with pi's runtime. Mocking everything produces tests that don't reflect reality. Not testing produces extensions that break in production.
 
-pi-test-harness takes a different approach: **let pi be pi.** Everything runs for real — extension loading, tool registration, hooks, event lifecycle, session state. Only the model is replaced (via `streamFn`), and optionally tool execution is intercepted for tools you don't want to run for real.
+pi-test-harness takes a different approach: **let pi be pi.** Everything runs for real — extension loading, tool registration, hooks, event lifecycle, session state. Only the model is replaced (via `streamFunction`), and optionally tool execution is intercepted for tools you don't want to run for real.
 
 The result: tests that exercise real code paths, in ~10 lines of setup, with zero LLM calls.
 
 ## Install
 
 ```bash
-npm install --save-dev @marcfargas/pi-test-harness
+npm install --save-dev @abdwhb-png/pi-test-harness
 ```
+
+### Bundled skill
+
+The repository and published package include the canonical `pi-test-harness` skill at `skills/pi-test-harness/`. Install that directory with your skill manager, or load the package as a Pi package, to make the skill available to agents. Installing the harness only as an npm/Bun development dependency does not activate the skill automatically.
 
 ### Peer dependencies
 
-- `@earendil-works/pi-coding-agent` >= 0.74.0
-- `@earendil-works/pi-ai` >= 0.74.0
-- `@earendil-works/pi-agent-core` >= 0.74.0
+- `@earendil-works/pi-coding-agent` >= 0.83.0
+- `@earendil-works/pi-ai` >= 0.83.0
+- `@earendil-works/pi-agent-core` >= 0.83.0
 
 ## Quick Start
 
@@ -30,7 +36,7 @@ import {
   createTestSession,
   when, calls, says,
   type TestSession,
-} from "@marcfargas/pi-test-harness";
+} from "@abdwhb-png/pi-test-harness";
 
 describe("my extension", () => {
   let t: TestSession;
@@ -67,6 +73,7 @@ describe("my extension", () => {
 ┌───────────────────────────────────────────┐
 │  Real pi environment                      │
 │                                           │
+│  ModelRuntime (isolated, no ~/.pi touch)  │
 │  Extensions ─── loaded for real           │
 │  Tool registry ─ real hooks + wrapping    │
 │  Session state ─ in-memory persistence    │
@@ -74,9 +81,10 @@ describe("my extension", () => {
 │  ┌─────────────────────────────────────┐  │
 │  │         Agent Loop                  │  │
 │  │                                     │  │
-│  │  streamFn ──── REPLACED by playbook │  │
-│  │  tool.execute() INTERCEPTED if mock │  │
-│  │  ctx.ui.* ──── INTERCEPTED + logged │  │
+│  │  streamFunction ── REPLACED by play │  │
+│  │  tool.execute()  INTERCEPTED if mock│  │
+│  │  ctx.ui.*        INTERCEPTED + log  │  │
+│  │  tool_call/result AGENTSESSION hook │  │
 │  └─────────────────────────────────────┘  │
 └───────────────────────────────────────────┘
 ```
@@ -84,10 +92,14 @@ describe("my extension", () => {
 Three substitution points at the boundary — everything else runs through pi's real code:
 
 | What | Substituted with | Purpose |
-|------|-----------------|---------|
-| `streamFn` | Playbook | Scripts what the model "decides" |
-| `tool.execute()` | Mock handler | Controls what tools "return" (hooks still fire) |
+| ------ | ----------------- | --------- |
+| `streamFunction` | Playbook | Scripts what the model "decides" |
+| `tool.execute()` | Mock handler | Controls what tools "return" |
 | `ctx.ui.*` | Mock UI | Controls what the user "answers" |
+
+**Hook pipeline.** Pi 0.83 AgentSession installs `beforeToolCall`/`afterToolCall` on the Agent, which drive extension `tool_call`/`tool_result` events. The harness mock does **not** re-emit these hooks — each fires exactly once per tool call. Tool result modification via `tool_result` hook return values works because the session subscriber reads the finalized result from the `tool_execution_end` event.
+
+**ModelRuntime isolation.** The session creates an isolated `ModelRuntime` with `authPath` under the working directory and `modelsPath: null`. No credentials file is read from `~/.pi/agent`. A dummy API key is injected to satisfy AgentSession auth checks (the model is never called).
 
 ## Playbook DSL
 
@@ -141,7 +153,7 @@ await t.run(
 
 ## Mock Tools
 
-`mockTools` intercepts `tool.execute()` for specific tools. Pi's tool registry and event flow remain untouched. Extension hooks (`tool_call`, `tool_result`) fire for mocked tools via the extension runner — so hook-based blocking (e.g., plan mode) works correctly even with mocked tools.
+`mockTools` intercepts `tool.execute()` for specific tools. Pi's tool registry and event flow remain untouched. Extension hooks (`tool_call`, `tool_result`) fire through AgentSession's `beforeToolCall`/`afterToolCall` — the harness does not re-emit them.
 
 ```typescript
 const t = await createTestSession({
@@ -221,6 +233,8 @@ mockUI: {
 ```
 
 **Defaults** (when no mock config is provided): `confirm → true`, `select → first item`, `input → ""`, `editor → ""`.
+
+The mock UI context implements the full Pi 0.83 `ExtensionUIContext` interface, including `setWorkingVisible`, `setWorkingIndicator`, `setHiddenThinkingLabel`, `addAutocompleteProvider`, and `getEditorComponent` (returns `undefined`). All calls are logged in `t.events.ui`.
 
 ## Event Collection
 
@@ -309,7 +323,7 @@ Playbook not fully consumed after run() completed.
 Catches broken packages before publish — verifies that `npm pack` → install → load actually works:
 
 ```typescript
-import { verifySandboxInstall } from "@marcfargas/pi-test-harness";
+import { verifySandboxInstall } from "@abdwhb-png/pi-test-harness";
 
 const result = await verifySandboxInstall({
   packageDir: "./packages/my-extension",
@@ -342,12 +356,26 @@ const result = await verifySandboxInstall({
 });
 ```
 
+### Custom npm command (`npmCommand`)
+
+Use a non-default npm executable for pack/install:
+
+```typescript
+const result = await verifySandboxInstall({
+  packageDir: "./packages/my-extension",
+  npmCommand: ["sfw", "npm"], // route through Socket Firewall
+  expect: { extensions: 1 },
+});
+```
+
+Default: `["npm"]` (or `["npm.cmd"]` on Windows). Pass any `execFileSync`-compatible argv.
+
 ## Mock Pi CLI
 
 For extensions that spawn `pi --mode json -p` as a subprocess (e.g., subagent orchestrators), `createMockPi()` puts a fake `pi` binary in PATH that returns controllable responses.
 
 ```typescript
-import { createMockPi } from "@marcfargas/pi-test-harness";
+import { createMockPi } from "@abdwhb-png/pi-test-harness";
 
 const mockPi = createMockPi();
 mockPi.install();  // creates temp dir with pi shim, prepends PATH
@@ -389,7 +417,7 @@ mockPi.uninstall();  // restores PATH, deletes temp dir
 ### Response options
 
 | Field | Type | Default | Description |
-|-------|------|---------|-------------|
+| ------- | ------ | --------- | ------------- |
 | `output` | `string` | echo task | Text in the `message_end` event |
 | `exitCode` | `number` | `0` | Process exit code |
 | `stderr` | `string` | — | Written to stderr |
@@ -410,8 +438,8 @@ Designed for **serial subprocess spawns** within a single test. If your test spa
 ### Test layer summary
 
 | Layer | What it mocks | Use when |
-|-------|--------------|----------|
-| `createTestSession` | LLM (`streamFn`) | Testing extension logic in-process |
+| ------- | -------------- | ---------- |
+| `createTestSession` | LLM (`streamFunction`) | Testing extension logic in-process |
 | `verifySandboxInstall` | Nothing (real install) | Verifying npm package works |
 | `createMockPi` | pi CLI binary | Testing subprocess-spawning extensions |
 
@@ -422,7 +450,7 @@ Designed for **serial subprocess spawns** within a single test. If your test spa
 Creates a test session with a real pi environment.
 
 | Option | Type | Default | Description |
-|--------|------|---------|-------------|
+| -------- | ------ | --------- | ------------- |
 | `extensions` | `string[]` | `[]` | Extension file paths to load |
 | `extensionFactories` | `Function[]` | `[]` | Inline extension factory functions |
 | `cwd` | `string` | auto temp dir | Working directory (cleaned on dispose if auto) |
@@ -436,9 +464,9 @@ Returns `Promise<TestSession>`.
 ### `TestSession`
 
 | Property / Method | Type | Description |
-|-------------------|------|-------------|
+| ------------------- | ------ | ------------- |
 | `run(...turns)` | `Promise<void>` | Run the conversation script |
-| `session` | `AgentSession` | The real pi session underneath |
+| `session` | `AgentSession` | The real pi session underneath (typed) |
 | `cwd` | `string` | Working directory |
 | `events` | `TestEvents` | All collected events |
 | `playbook` | `{ consumed, remaining }` | Playbook consumption state |
@@ -447,8 +475,9 @@ Returns `Promise<TestSession>`.
 ### `verifySandboxInstall(options)`
 
 | Option | Type | Description |
-|--------|------|-------------|
+| -------- | ------ | ------------- |
 | `packageDir` | `string` | Package directory (must have `package.json`) |
+| `npmCommand` | `string[]` | Custom npm command argv (default: platform npm) |
 | `expect.extensions` | `number` | Expected extension count |
 | `expect.tools` | `string[]` | Expected tool names |
 | `expect.skills` | `number` | Expected skill count |
@@ -462,7 +491,7 @@ Creates a mock pi CLI with file-based response queue.
 Returns `MockPi`:
 
 | Property / Method | Type | Description |
-|-------------------|------|-------------|
+| ------------------- | ------ | ------------- |
 | `install()` | `void` | Create shim, prepend to PATH |
 | `uninstall()` | `void` | Restore PATH, delete temp dir |
 | `onCall(response)` | `void` | Queue a `MockPiCall` response |
@@ -492,25 +521,13 @@ interface MockUIConfig {
 
 ### `ToolBlockedError`
 
-Thrown (and exported) when an extension hook blocks a mocked tool call. Use with `instanceof` to assert that a specific tool was blocked rather than crashed:
+Kept for backward compatibility. In Pi 0.83, tool blocking is handled by AgentSession's `beforeToolCall` before `execute()` is reached, so `ToolBlockedError` is no longer thrown by the mock flow. It remains exported for instanceof checks on errors from event callbacks:
 
 ```typescript
-import { ToolBlockedError } from "@marcfargas/pi-test-harness";
+import { ToolBlockedError } from "@abdwhb-png/pi-test-harness";
 
-// Verify a tool was blocked (not just errored)
-const result = t.events.toolResultsFor("bash")[0];
-expect(result.isError).toBe(true);
-
-// Or catch it in error-propagation scenarios
-try {
-  await t.run(when("Try write", [calls("bash", { command: "rm -rf /" }), says("Done.")]));
-} catch (err) {
-  if (err instanceof ToolBlockedError) {
-    // Expected — extension hook blocked the call
-  } else {
-    throw err; // real error
-  }
-}
+const err = new ToolBlockedError("tool was blocked");
+expect(err instanceof ToolBlockedError).toBe(true);
 ```
 
 ### `safeRmSync(filePath)`
@@ -522,7 +539,7 @@ Removes a file, swallowing `EPERM`/`EBUSY` errors only. Intended for `afterEach`
 Testing an extension that registers 8 tools, blocks writes in plan mode, and manages plan lifecycle:
 
 ```typescript
-import { createTestSession, when, calls, says, type TestSession } from "@marcfargas/pi-test-harness";
+import { createTestSession, when, calls, says, type TestSession } from "@abdwhb-png/pi-test-harness";
 import * as path from "node:path";
 
 const EXTENSION = path.resolve(__dirname, "../../src/index.ts");
@@ -575,7 +592,7 @@ describe("pi-planner", () => {
 On Windows, this means `rmSync(dbPath)` in `afterEach` throws `EPERM`. Use `safeRmSync` instead:
 
 ```typescript
-import { safeRmSync } from "@marcfargas/pi-test-harness";
+import { safeRmSync } from "@abdwhb-png/pi-test-harness";
 
 afterEach(() => {
   // Dispose session first, then attempt file cleanup
@@ -596,7 +613,7 @@ Files are cleaned by the OS when the process exits. Use unique DB paths per test
 
 > **Let pi be pi.** The less we fake, the more real the test.
 
-The harness minimizes substitution. Extensions load through pi's real loader (jiti). Tools go through pi's real wrapping pipeline (`wrapToolsWithExtensions`). Hooks fire through pi's real `ExtensionRunner`. Events flow through pi's real event system.
+The harness minimizes substitution. Extensions load through pi's real loader (jiti). Tools go through pi's real wrapping pipeline. Hooks fire through AgentSession's `beforeToolCall`/`afterToolCall`. Events flow through pi's real event system.
 
 Only the LLM boundary is replaced — because that's the one thing you **can't** run in a deterministic test. Real-provider smoke tests belong in the application or extension that owns the provider configuration, not in this harness.
 
@@ -604,17 +621,21 @@ Only the LLM boundary is replaced — because that's the one thing you **can't**
 
 CI runs in two stages:
 
-1. **Verify** on Linux/Node 24: lint, typecheck, unit tests, build, audit, and a packed-consumer import smoke test.
-2. **Integration matrix** after verify passes: Linux + Windows, Node 22 + 24, and the latest patch of the last two supported Pi minor lines (`0.74.x` and `0.75.x`).
+1. **Verify** on Linux/Node 24: lint, typecheck, unit tests, build, audit (`sfw npm audit`), and a packed-consumer import smoke test (`sfw npm install` with exact peers).
+2. **Integration matrix** after verify passes: Linux + Windows, Node 22 + 24, Pi 0.83.0 (locked).
 
 The unit suite covers the playbook DSL and subprocess `createMockPi()` shim. The integration suite covers real in-process Pi sessions, extension loading, tool registration/execution, hooks, UI mocking, sandbox package install verification, regression cases, and Windows-safe cleanup behavior.
 
 Known intentional gaps:
 
 - No real LLM/provider calls; the harness replaces the model boundary by design.
-- No compatibility testing for the deprecated `@mariozechner/*` Pi packages.
+- No compatibility testing for the deprecated `@mariozechner/*` Pi packages or Pi <0.83.0.
 - Concurrent/parallel tool execution is not yet deeply exercised. Today the playbook emits one tool call per assistant message, which is deterministic and good for most extension tests. To test true Pi parallelism, the harness should grow a grouped/batched call action that emits multiple `toolCall` blocks in one assistant message, then assert result collection by `toolCallId` rather than completion order.
 - Edge cases still worth adding over time: command/input/before-agent hooks, tool-result hook mutation, multiple extensions interacting, install failure modes, malformed package metadata, ESM/CJS fixture packages, cleanup failure paths, and concurrent `createMockPi()` subprocess consumers.
+
+## Upstream
+
+Forked from [@marcfargas/pi-test-harness](https://github.com/marcfargas/pi-test-harness). Upstream history is preserved in the CHANGELOG.
 
 ## License
 

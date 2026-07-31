@@ -4,19 +4,31 @@
  * configured mock responses.
  */
 
+import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { MockUIConfig, UICallRecord } from "./types.js";
 
 /**
  * Create a mock ExtensionUIContext that records all calls and returns
  * configured responses.
  */
-export function createMockUIContext(config: MockUIConfig = {}, uiLog: UICallRecord[]): any {
-	function record(method: string, args: unknown[], returnValue?: unknown): void {
+export function createMockUIContext(
+	config: MockUIConfig = {},
+	uiLog: UICallRecord[],
+): ExtensionUIContext {
+	function record(
+		method: string,
+		args: unknown[],
+		returnValue?: unknown,
+	): void {
 		uiLog.push({ method, args, returnValue });
 	}
 
-	const mockUI = {
-		async select(title: string, options: string[], _opts?: any): Promise<string | undefined> {
+	const mockUI: ExtensionUIContext = {
+		async select(
+			title: string,
+			options: string[],
+			_opts?: any,
+		): Promise<string | undefined> {
 			let result: string | undefined;
 			const handler = config.select;
 			if (handler === undefined || handler === null) {
@@ -32,7 +44,11 @@ export function createMockUIContext(config: MockUIConfig = {}, uiLog: UICallReco
 			return result;
 		},
 
-		async confirm(title: string, message: string, _opts?: any): Promise<boolean> {
+		async confirm(
+			title: string,
+			message: string,
+			_opts?: any,
+		): Promise<boolean> {
 			let result: boolean;
 			const handler = config.confirm;
 			if (handler === undefined || handler === null) {
@@ -48,7 +64,11 @@ export function createMockUIContext(config: MockUIConfig = {}, uiLog: UICallReco
 			return result;
 		},
 
-		async input(title: string, placeholder?: string, _opts?: any): Promise<string | undefined> {
+		async input(
+			title: string,
+			placeholder?: string,
+			_opts?: any,
+		): Promise<string | undefined> {
 			let result: string | undefined;
 			const handler = config.input;
 			if (handler === undefined || handler === null) {
@@ -76,7 +96,7 @@ export function createMockUIContext(config: MockUIConfig = {}, uiLog: UICallReco
 			return result;
 		},
 
-		notify(message: string, type?: string): void {
+		notify(message: string, type?: "info" | "warning" | "error"): void {
 			record("notify", [message, type]);
 		},
 
@@ -90,6 +110,21 @@ export function createMockUIContext(config: MockUIConfig = {}, uiLog: UICallReco
 
 		setWorkingMessage(message?: string): void {
 			record("setWorkingMessage", [message]);
+		},
+
+		setWorkingVisible(visible: boolean): void {
+			record("setWorkingVisible", [visible]);
+		},
+
+		setWorkingIndicator(options?: {
+			frames?: string[];
+			intervalMs?: number;
+		}): void {
+			record("setWorkingIndicator", [options]);
+		},
+
+		setHiddenThinkingLabel(label?: string): void {
+			record("setHiddenThinkingLabel", [label]);
 		},
 
 		setWidget(key: string, content: any, _options?: any): void {
@@ -111,19 +146,29 @@ export function createMockUIContext(config: MockUIConfig = {}, uiLog: UICallReco
 			return undefined as never;
 		},
 
-		pasteToEditor(...args: unknown[]): void {
-			record("pasteToEditor", args);
+		pasteToEditor(text: string): void {
+			record("pasteToEditor", [text]);
 		},
-		setEditorText(...args: unknown[]): void {
-			record("setEditorText", args);
+		setEditorText(text: string): void {
+			record("setEditorText", [text]);
 		},
-		getEditorText(): string { return ""; },
-		setEditorComponent(...args: unknown[]): void {
-			record("setEditorComponent", args);
+		getEditorText(): string {
+			return "";
+		},
+
+		setEditorComponent(factory: any): void {
+			record("setEditorComponent", [factory]);
+		},
+
+		addAutocompleteProvider(factory: any): void {
+			record("addAutocompleteProvider", [factory]);
+		},
+
+		getEditorComponent(): any | undefined {
+			return undefined;
 		},
 
 		get theme(): any {
-			// Return a minimal theme stub
 			return {
 				fg: (_color: string, text: string) => text,
 				bold: (text: string) => text,
@@ -132,10 +177,18 @@ export function createMockUIContext(config: MockUIConfig = {}, uiLog: UICallReco
 			};
 		},
 
-		getAllThemes(): any[] { return []; },
-		getTheme(): any { return undefined; },
-		setTheme(): any { return { success: false, error: "Test mode" }; },
-		getToolsExpanded(): boolean { return false; },
+		getAllThemes(): any[] {
+			return [];
+		},
+		getTheme(): any {
+			return undefined;
+		},
+		setTheme(): any {
+			return { success: false, error: "Test mode" };
+		},
+		getToolsExpanded(): boolean {
+			return false;
+		},
 		setToolsExpanded(): void {},
 	};
 

@@ -1,24 +1,24 @@
 /**
  * Tool execution interceptor — wraps tool.execute() for tools in mockTools.
  *
- * For mocked tools, we:
- *  1. Fire extension tool_call hooks (which can block execution)
- *  2. Return mock results instead of calling the real tool
- *  3. Fire extension tool_result hooks (which can modify results)
+ * For mocked tools, the mock replaces tool.execute() and returns controlled
+ * values. Extension hooks (tool_call / tool_result) are handled by
+ * AgentSession 0.83's internal beforeToolCall/afterToolCall — the mock
+ * must NOT re-emit them.
  *
- * This preserves the full extension hook chain while avoiding real tool execution.
+ * For non-mocked tools, the real execute() is called and results are
+ * collected for event queries.
  */
 
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import type { ExtensionRunner } from "@earendil-works/pi-coding-agent";
 import type { MockToolHandler, ToolResult, ToolResultRecord } from "./types.js";
 import type { PlaybookState } from "./playbook.js";
 import { formatToolError } from "./diagnostics.js";
 
 /**
  * Thrown when an extension hook blocks a tool call.
- * Used instead of plain Error so wrapForCollection can reliably detect blocks
- * without fragile message-string matching.
+ * Exported for test assertions — no longer thrown by the mock itself since
+ * AgentSession 0.83's beforeToolCall handles blocking before execute().
  */
 export class ToolBlockedError extends Error {
 	readonly toolBlocked = true as const;
@@ -32,11 +32,8 @@ export class ToolBlockedError extends Error {
 /**
  * Returns true if `err` represents a hook-based tool block.
  *
- * Two sources produce block errors:
- * 1. The harness's own mock path → throws `ToolBlockedError` (instanceof check).
- * 2. Pi's native `wrapToolsWithExtensions` hook chain → throws a plain `Error`
- *    with a message containing known block phrases. We keep message-string
- *    fallback detection for these until pi exports a typed error class.
+ * Kept for consumers that catch errors from tool execution flows, though
+ * AgentSession 0.83's beforeToolCall blocks before execute() is reached.
  */
 export function isBlockedError(err: unknown): boolean {
 	if (err instanceof ToolBlockedError) return true;
@@ -77,27 +74,38 @@ function normalizeMockResult(
 
 /**
  * Intercept tool execution for mocked tools.
- * Returns the modified tools array (original tools wrapped where needed).
  *
- * When an extensionRunner is provided, mocked tools fire tool_call/tool_result
- * hooks so that extension blocking (e.g., plan mode) works correctly.
+ * Unlike the old approach, this does NOT emit tool_call/tool_result hooks
+ * manually — AgentSession 0.83's beforeToolCall/afterToolCall handles that.
+ * The mock only replaces execute() to return controlled values. Result
+ * recording is handled by the session subscriber from tool_execution_end
+ * events (which carry the final afterToolCall-modified result).
+ *
+ * Returns a Set of mocked tool names for the session subscriber to set the
+ * mocked flag on recorded results, plus a Set of toolCallIds whose mock
+ * returned a ToolResult with isError:true. Pi 0.83's agent loop hardcodes
+ * successful execute() as non-error (isError:false), so the subscriber must
+ * consult this set to preserve the mock's error intent in collected records.
  */
 export function interceptToolExecution(
 	tools: AgentTool[],
 	mockTools: Record<string, MockToolHandler>,
-	toolResults: ToolResultRecord[],
 	playbookState: PlaybookState,
 	propagateErrors: boolean,
-	extensionRunner?: ExtensionRunner,
-): AgentTool[] {
-	return tools.map((tool) => {
+): {
+	tools: AgentTool[];
+	mockedNames: ReadonlySet<string>;
+	mockedErrorToolCallIds: ReadonlySet<string>;
+} {
+	const mockedNames = new Set(Object.keys(mockTools));
+	const mockedErrorToolCallIds = new Set<string>();
+
+	const wrapped = tools.map((tool) => {
 		const mockHandler = mockTools[tool.name];
 		if (!mockHandler) {
-			// No mock — wrap for event collection but keep real execution
-			return wrapForCollection(tool, toolResults, playbookState, propagateErrors, false);
+			return wrapForCollection(tool, playbookState, propagateErrors);
 		}
 
-		// Mock — replace execute() but fire extension hooks
 		return {
 			...tool,
 			execute: async (
@@ -106,70 +114,19 @@ export function interceptToolExecution(
 				_signal?: AbortSignal,
 				_onUpdate?: any,
 			) => {
-				const step = playbookState.consumed;
-
-				// Fire tool_call hook — extensions can block execution
-				if (extensionRunner?.hasHandlers("tool_call")) {
-					const callResult = await extensionRunner.emitToolCall({
-						type: "tool_call",
-						toolName: tool.name,
-						toolCallId,
-						input: params,
-					} as any);
-
-					if (callResult?.block) {
-						const reason = callResult.reason || "Tool execution was blocked by an extension";
-
-						// Record the block in toolResults before throwing so
-						// toolResultsFor() can see it
-						const record: ToolResultRecord = {
-							step,
-							toolName: tool.name,
-							toolCallId,
-							text: reason,
-							content: [{ type: "text", text: reason }],
-							isError: true,
-							details: undefined,
-							mocked: true,
-						};
-						toolResults.push(record);
-						fireThenCallback(playbookState, toolCallId, record);
-
-						// Use ToolBlockedError so wrapForCollection can detect blocks
-						// without string matching
-						throw new ToolBlockedError(reason);
-					}
-				}
-
-				// Not blocked — compute mock result
 				const result = normalizeMockResult(mockHandler, params);
-
-				// Fire tool_result hook — extensions can modify the result
-				if (extensionRunner?.hasHandlers("tool_result")) {
-					const resultHook = await extensionRunner.emitToolResult({
-						type: "tool_result",
-						toolName: tool.name,
-						toolCallId,
-						input: params,
-						content: result.content,
-						details: result.details,
-						isError: false,
-					} as any);
-
-					if (resultHook) {
-						result.content = (resultHook.content as typeof result.content) ?? result.content;
-						result.details = resultHook.details ?? result.details;
-					}
-				}
-
-				// Record in events
 				const text = result.content
 					.filter((c) => c.type === "text")
 					.map((c) => c.text)
 					.join("\n");
-
-				const record: ToolResultRecord = {
-					step,
+				if (result.isError) {
+					// Pi 0.83 hardcodes successful execute() as non-error; remember the
+					// toolCallId so the session subscriber can flag the record.
+					mockedErrorToolCallIds.add(toolCallId);
+				}
+				// fireThenCallback fires synchronously so .then() sees real data
+				fireThenCallback(playbookState, toolCallId, {
+					step: playbookState.consumed,
 					toolName: tool.name,
 					toolCallId,
 					text,
@@ -177,11 +134,7 @@ export function interceptToolExecution(
 					isError: result.isError ?? false,
 					details: result.details,
 					mocked: true,
-				};
-				toolResults.push(record);
-
-				// Fire .then() callback if pending
-				fireThenCallback(playbookState, toolCallId, record);
+				});
 
 				return {
 					content: result.content,
@@ -190,17 +143,19 @@ export function interceptToolExecution(
 			},
 		} as AgentTool;
 	});
+
+	return { tools: wrapped, mockedNames, mockedErrorToolCallIds };
 }
 
 /**
  * Wrap a real tool for event collection (non-mocked tools).
+ * Does not push to toolResults — the session subscriber handles recording
+ * from tool_execution_end events.
  */
 function wrapForCollection(
 	tool: AgentTool,
-	toolResults: ToolResultRecord[],
 	playbookState: PlaybookState,
 	propagateErrors: boolean,
-	mocked: boolean,
 ): AgentTool {
 	const originalExecute = tool.execute;
 
@@ -215,14 +170,20 @@ function wrapForCollection(
 			const step = playbookState.consumed;
 
 			try {
-				const result = await originalExecute.call(tool, toolCallId, params, signal, onUpdate);
+				const result = await originalExecute.call(
+					tool,
+					toolCallId,
+					params,
+					signal,
+					onUpdate,
+				);
 
 				const text = (result.content ?? [])
 					.filter((c: any) => c.type === "text")
 					.map((c: any) => c.text)
 					.join("\n");
 
-				const record: ToolResultRecord = {
+				fireThenCallback(playbookState, toolCallId, {
 					step,
 					toolName: tool.name,
 					toolCallId,
@@ -230,40 +191,26 @@ function wrapForCollection(
 					content: result.content ?? [],
 					isError: !!(result as any).isError,
 					details: result.details,
-					mocked,
-				};
-				toolResults.push(record);
-
-				// Fire .then() callback if pending
-				fireThenCallback(playbookState, toolCallId, record);
+					mocked: false,
+				});
 
 				return result;
 			} catch (err) {
 				const errMsg = err instanceof Error ? err.message : String(err);
 
-				// Check if this was an extension hook blocking the tool
-				// (not a real execution error — don't propagate as test failure)
-				const isBlockedByHook = isBlockedError(err);
-
-				const record: ToolResultRecord = {
-					step,
-					toolName: tool.name,
-					toolCallId,
-					text: errMsg,
-					content: [{ type: "text", text: errMsg }],
-					isError: true,
-					details: undefined,
-					mocked,
-				};
-				toolResults.push(record);
-
-				// Fire .then() callback with error result
-				fireThenCallback(playbookState, toolCallId, record);
-
-				if (isBlockedByHook) {
-					// Hook blocked the tool — re-throw so agent loop records
-					// isError in events, but don't treat as test failure
-					throw err;
+				try {
+					fireThenCallback(playbookState, toolCallId, {
+						step,
+						toolName: tool.name,
+						toolCallId,
+						text: errMsg,
+						content: [{ type: "text", text: errMsg }],
+						isError: true,
+						details: undefined,
+						mocked: false,
+					});
+				} catch {
+					/* best-effort callback */
 				}
 
 				if (propagateErrors) {
@@ -271,7 +218,6 @@ function wrapForCollection(
 					throw new Error(diagnostic, { cause: err });
 				}
 
-				// Capture as error result instead of throwing
 				return {
 					content: [{ type: "text", text: errMsg }],
 					details: {},
@@ -282,17 +228,25 @@ function wrapForCollection(
 	} as AgentTool;
 }
 
-function fireThenCallback(state: PlaybookState, toolCallId: string, record: ToolResultRecord): void {
-	// Look up by tool call ID first (unique per call), then fall back to tool name
-	const callback = state.pendingCallbacks.get(toolCallId)
-		?? state.pendingCallbacks.get(record.toolName);
-	const key = state.pendingCallbacks.has(toolCallId) ? toolCallId : record.toolName;
+function fireThenCallback(
+	state: PlaybookState,
+	toolCallId: string,
+	record: ToolResultRecord,
+): void {
+	const callback =
+		state.pendingCallbacks.get(toolCallId) ??
+		state.pendingCallbacks.get(record.toolName);
+	const key = state.pendingCallbacks.has(toolCallId)
+		? toolCallId
+		: record.toolName;
 	if (callback) {
 		state.pendingCallbacks.delete(key);
 		try {
 			callback(record);
 		} catch (err) {
-			console.warn(`[pi-test-harness] .then() callback error for ${record.toolName}: ${err}`);
+			console.warn(
+				`[pi-test-harness] .then() callback error for ${record.toolName}: ${err}`,
+			);
 		}
 	}
 }

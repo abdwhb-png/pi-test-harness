@@ -18,9 +18,9 @@ import {
 	SessionManager,
 	SettingsManager,
 	type AgentSessionEvent,
+	ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { getModel } from "@earendil-works/pi-ai";
 import { createPlaybookStreamFn, type PlaybookState } from "./playbook.js";
 import { interceptToolExecution } from "./mock-tools.js";
 import { createMockUIContext } from "./mock-ui.js";
@@ -33,54 +33,68 @@ import type {
 	ToolCallRecord,
 } from "./types.js";
 
-export async function createTestSession(options: TestSessionOptions = {}): Promise<TestSession> {
+export async function createTestSession(
+	options: TestSessionOptions = {},
+): Promise<TestSession> {
 	const propagateErrors = options.propagateErrors ?? true;
 	const ownsTmpDir = !options.cwd;
-	const cwd = options.cwd ?? fs.mkdtempSync(path.join(os.tmpdir(), "pi-test-harness-"));
+	const cwd =
+		options.cwd ?? fs.mkdtempSync(path.join(os.tmpdir(), "pi-test-harness-"));
 
-	// Ensure cwd exists
 	if (!fs.existsSync(cwd)) {
 		fs.mkdirSync(cwd, { recursive: true });
 	}
 
-	// Build resource loader with extensions
 	const settingsManager = SettingsManager.inMemory();
 	const loader = new DefaultResourceLoader({
 		cwd,
 		agentDir: cwd, // Use cwd as agent dir to avoid touching real ~/.pi
 		settingsManager,
-		additionalExtensionPaths: options.extensions?.map((p) => path.resolve(cwd, p)) ?? [],
+		additionalExtensionPaths:
+			options.extensions?.map((p) => path.resolve(cwd, p)) ?? [],
 		extensionFactories: options.extensionFactories,
-		systemPromptOverride: options.systemPrompt ? () => options.systemPrompt! : undefined,
+		systemPromptOverride: options.systemPrompt
+			? () => options.systemPrompt!
+			: undefined,
 	});
 	await loader.reload();
 
-	// Use a real model definition (never actually called — playbook replaces streamFn)
-	const playbookModel = getModel("openai", "gpt-4o");
+	// Create isolated ModelRuntime with auth under cwd and no persisted model catalog
+	const modelRuntime = await ModelRuntime.create({
+		authPath: path.join(cwd, "auth.json"),
+		modelsPath: null,
+	});
 
-	// Create real session with in-memory persistence
+	// Use a builtin model as placeholder (never actually called — playbook replaces streamFn)
+	const playbookModel = modelRuntime.getModel("openai", "gpt-4o");
+	if (!playbookModel) {
+		throw new Error(
+			"Model openai/gpt-4o not found in isolated ModelRuntime. " +
+				"This should not happen — builtin providers are always registered. " +
+				"Check that @earendil-works/pi-ai is installed.",
+		);
+	}
+
+	// Provide a dummy API key so AgentSession.prompt does not reject before
+	// the playbook replaces streamFunction. The key is never sent to any LLM.
+	// Both the initial ModelRuntime.create refresh and this key refresh must be
+	// offline: allowNetwork defaults to modelNetworkEnabled (true when PI_OFFLINE
+	// is unset), which would trigger a remote availability refresh for a key
+	// that is only a placeholder — hanging fresh processes on network stalls.
+	await modelRuntime.setRuntimeApiKey("openai", "sk-test-harness-dummy", {
+		allowNetwork: false,
+	});
+
 	const { session, extensionsResult } = await createAgentSession({
 		cwd,
 		agentDir: cwd,
 		model: playbookModel,
+		modelRuntime,
 		sessionManager: SessionManager.inMemory(),
 		settingsManager,
 		resourceLoader: loader,
 	});
 
-	// Override getApiKey to bypass real auth checks (on both agent and session)
-	(session.agent as any).getApiKey = async () => "test-key";
-	// The session also validates via _modelRegistry.getApiKey — patch it
-	const origModelRegistry = (session as any)._modelRegistry;
-	if (origModelRegistry) {
-		origModelRegistry.getApiKey = async () => "test-key";
-		origModelRegistry.getApiKeyForProvider = async () => "test-key";
-		origModelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test-key", headers: {} });
-		origModelRegistry.hasConfiguredAuth = () => true;
-		origModelRegistry.isUsingOAuth = () => false;
-	}
-
-	// Check for extension load errors
 	if (extensionsResult.errors.length > 0) {
 		session.dispose();
 		if (ownsTmpDir && fs.existsSync(cwd)) {
@@ -92,15 +106,16 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 		throw new Error(`Extension load errors:\n${errors}`);
 	}
 
-	// Event collection
 	const events = createEventCollector();
 	let currentStep = 0;
+	let mockedToolNames: ReadonlySet<string> = new Set();
+	// toolCallIds whose mock returned a ToolResult with isError:true — Pi 0.83
+	// hardcodes successful execute() as non-error, so records must consult this.
+	let mockedErrorToolCallIds: ReadonlySet<string> = new Set();
 
-	// Subscribe to session events
 	session.subscribe((event: AgentSessionEvent) => {
 		events.all.push(event);
 
-		// Collect tool call events
 		if (event.type === "tool_execution_start") {
 			const record: ToolCallRecord = {
 				step: currentStep,
@@ -112,66 +127,60 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 		}
 
 		if (event.type === "tool_execution_end") {
-			const resultText = event.result?.content
-				?.filter((c: any) => c.type === "text")
-				?.map((c: any) => c.text)
-				?.join("\n") ?? "";
+			const resultText =
+				event.result?.content
+					?.filter((c: any) => c.type === "text")
+					?.map((c: any) => c.text)
+					?.join("\n") ?? "";
 
 			if (event.isError) {
-				// Check if this was a block (look at the most recent tool call)
 				const lastCall = events.toolCalls[events.toolCalls.length - 1];
 				if (lastCall && lastCall.toolName === event.toolName) {
-					// Detect block via result text. We cannot use isBlockedError() here
-					// because the AgentSessionEvent only carries the serialized result
-					// content — not the original Error object. Pi does not yet export a
-					// typed block error, so message-string matching is the only option
-					// at this layer. Keep in sync with isBlockedError() in mock-tools.ts.
-					if (resultText.includes("blocked") || resultText.includes("Plan mode")) {
+					if (
+						resultText.includes("blocked") ||
+						resultText.includes("Plan mode")
+					) {
 						lastCall.blocked = true;
 						lastCall.blockReason = resultText;
 					}
 				}
 			}
 
-			// Recent pi versions can block a tool before the wrapped tool.execute()
-			// runs. In that path mock-tools.ts cannot record the result itself, so
-			// mirror the serialized session event if no wrapper record exists yet.
-			if (!events.toolResults.some((r) => r.toolCallId === event.toolCallId)) {
-				events.toolResults.push({
-					step: currentStep,
-					toolName: event.toolName,
-					toolCallId: event.toolCallId,
-					text: resultText,
-					content: event.result?.content ?? [],
-					isError: event.isError,
-					details: event.result?.details,
-					mocked: false,
-				});
-			}
+			// Record the final result (after afterToolCall modifications).
+			// Always push — each tool_execution_end has a unique toolCallId
+			// within a run, and the subscriber is the only source of results.
+			const isMocked = mockedToolNames.has(event.toolName);
+			events.toolResults.push({
+				step: currentStep,
+				toolName: event.toolName,
+				toolCallId: event.toolCallId,
+				text: resultText,
+				content: event.result?.content ?? [],
+				isError: event.isError || mockedErrorToolCallIds.has(event.toolCallId),
+				details: event.result?.details,
+				mocked: isMocked,
+			});
 		}
 
-		// Collect messages
 		if (event.type === "message_end") {
 			events.messages.push(event.message);
 		}
 	});
 
-	// Playbook state (initialized on run())
 	let playbookState: PlaybookState | null = null;
 
-	// Mock UI context
 	const mockUI = createMockUIContext(options.mockUI, events.ui);
 
-	// Inject mock UI context via bindExtensions
 	await session.bindExtensions({
 		uiContext: mockUI,
 		onError: (err) => {
-			console.error(`[pi-test-harness] Extension error: ${err.event} — ${err.error}`);
+			console.error(
+				`[pi-test-harness] Extension error: ${err.event} — ${err.error}`,
+			);
 		},
 	});
 
-	// Capture original tools before any wrapping — used in run() to avoid double-wrap
-	const originalTools: AgentTool[] = [...((session.agent as any).state.tools as AgentTool[])];
+	const originalTools: AgentTool[] = [...session.agent.state.tools];
 
 	const testSession: TestSession = {
 		session,
@@ -186,46 +195,42 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 		},
 
 		async run(...turns: Turn[]): Promise<void> {
-			// Create playbook streamFn
 			const { streamFn, state } = createPlaybookStreamFn(turns);
 			playbookState = state;
 
-			// Replace the model with the playbook
-			(session.agent as any).streamFn = streamFn;
-			(session.agent as any).getApiKey = () => "test-key";
+			// Assign playbook streamFn to the public Agent.streamFunction
+			session.agent.streamFunction = streamFn;
 
-			// Always wrap tools for event collection; if no mocks configured, pass empty map
 			const effectiveMockTools = options.mockTools ?? {};
 			const currentTools = originalTools;
-			const runner = session.extensionRunner;
-			const interceptedTools = interceptToolExecution(
+			const {
+				tools: interceptedTools,
+				mockedNames,
+				mockedErrorToolCallIds: errorIds,
+			} = interceptToolExecution(
 				currentTools,
 				effectiveMockTools,
-				events.toolResults,
 				state,
 				propagateErrors,
-				runner,
 			);
-			const agent = session.agent as any;
-			if (typeof agent.setTools === "function") {
-				agent.setTools(interceptedTools);
-			} else {
-				agent.state.tools = interceptedTools;
-			}
+			mockedToolNames = mockedNames;
+			mockedErrorToolCallIds = errorIds;
+			session.agent.state.tools = interceptedTools;
 
-			// Run each turn
 			for (const turn of turns) {
 				currentStep = state.consumed;
 				await session.prompt(turn.prompt);
-				await (session.agent as any).waitForIdle();
+				await session.agent.waitForIdle();
 			}
 
-			// Auto-assert: playbook fully consumed
 			if (state.remaining > 0) {
-				// Collect remaining actions for diagnostics
 				const allActions = turns.flatMap((t) => t.actions);
 				const remaining = allActions.slice(state.consumed);
-				const diagnostic = formatPlaybookDiagnostic("remaining", state, remaining);
+				const diagnostic = formatPlaybookDiagnostic(
+					"remaining",
+					state,
+					remaining,
+				);
 				throw new Error(diagnostic);
 			}
 		},
@@ -236,7 +241,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 		 * Note: `session.dispose()` does NOT fire `session_shutdown`. That event is
 		 * dispatched by pi at Node.js process exit. Extensions that open resources in
 		 * `session_start` (e.g., SQLite databases) keep those resources open until the
-		 * process exits. Use `safeRmSync` when cleaning up extension-owned files in
+		 * process exit. Use `safeRmSync` when cleaning up extension-owned files in
 		 * afterEach hooks on Windows to avoid EPERM errors.
 		 */
 		dispose(): void {

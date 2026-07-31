@@ -1,4 +1,36 @@
-# @marcfargas/pi-test-harness
+# @abdwhb-png/pi-test-harness
+
+## 0.7.0
+
+### Major Changes
+
+- [`fork`](https://github.com/abdwhb-png/pi-test-harness) Thanks [@abdwhb](https://github.com/abdwhb)! — Fork from `@marcfargas/pi-test-harness@0.6.1`. Pi 0.83.0 compatibility milestone.
+
+  **Breaking: Pi `^0.83.0` required.** Drops support for Pi `<0.83.0`.
+
+  - **`ModelRuntime` isolation** — `createTestSession()` creates an isolated `ModelRuntime` with `authPath` under the working directory and `modelsPath: null`. No credentials file is read from `~/.pi/agent`. A dummy API key is set on the openai provider to satisfy AgentSession auth checks (the model is never called — playbook replaces `streamFunction`).
+
+  - **Public Agent APIs** — The harness now accesses `session.agent.streamFunction`, `session.agent.state.tools`, and `session.agent.waitForIdle()` through the public typed API surface of Pi 0.83's `Agent` class. No more `(agent as any).streamFn` casts.
+
+  - **AgentSession typed** — `TestSession.session` is typed as `AgentSession` from `@earendil-works/pi-coding-agent`.
+
+  - **Hook pipeline — single source of truth** — AgentSession 0.83 installs `beforeToolCall`/`afterToolCall` hooks on the Agent, which drive the extension `tool_call`/`tool_result` events. The harness mock no longer re-emits these hooks manually. Each hook fires exactly once per tool call. Tool result modification via `tool_result` hook return values works correctly because the subscriber reads the finalized result from `tool_execution_end`.
+
+  - **Removed `ExtensionRunner` dependency from mock-tools** — `interceptToolExecution()` no longer takes an `extensionRunner` parameter. Mock wrappers only replace `tool.execute()`; hook dispatch is handled by AgentSession.
+
+  - **`ExtensionUIContext` — 0.83 members** — `createMockUIContext()` returns a properly typed `ExtensionUIContext` with all 0.83 members: `setWorkingVisible`, `setWorkingIndicator`, `setHiddenThinkingLabel`, `addAutocompleteProvider`, `getEditorComponent`. No `any` casts on the return type.
+
+  - **`SandboxOptions.npmCommand`** — New option to specify a custom npm command for `verifySandboxInstall()`. Default resolves to the platform npm. Use `["sfw", "npm"]` to route through Socket Firewall, or provide any `execFileSync`-compatible argv. A nonexistent command produces a clear `ENOENT` error.
+
+  - **`ToolBlockedError` kept for compat** — Still exported but no longer thrown in the normal mock flow. AgentSession 0.83 blocks tools via `beforeToolCall` before `execute()` is reached. Consumers can use `ToolBlockedError` for instanceof checks on errors from event callbacks.
+
+  - **`session_shutdown` note** — `session.dispose()` does NOT fire `session_shutdown`. That event fires at Node.js process exit. Extension-owned resources (e.g., SQLite handles) remain open until then.
+
+  - **Package identity** — Renamed to `@abdwhb-png/pi-test-harness@0.7.0`. Repository/homepage/bugs point to `abdwhb-png/pi-test-harness`. Peer dependencies narrowed to `^0.83.0`. Dev dependencies pinned to exact `0.83.0`.
+
+  - **CI** — Verify job runs `sfw npm ci` and `sfw npm audit`. Integration tests Node 22 and 24 on Linux and Windows with Pi 0.83. Release workflow changed to manual (`workflow_dispatch`).
+
+  - **Consumer smoke** — Uses `sfw npm install` with exact `0.83.0` peers, runs a real say-only session, and asserts consumption.
 
 ## 0.6.1
 

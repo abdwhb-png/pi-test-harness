@@ -2,7 +2,10 @@
  * Shared types for pi-test-harness.
  */
 
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type {
+	AgentSession,
+	AgentSessionEvent,
+} from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
 // ── Playbook types ──────────────────────────────────────────
@@ -39,8 +42,13 @@ export type MockToolHandler =
 
 export interface MockUIConfig {
 	confirm?: boolean | ((title: string, message: string) => boolean);
-	select?: number | string | ((title: string, items: string[]) => string | undefined);
-	input?: string | ((title: string, placeholder?: string) => string | undefined);
+	select?:
+		| number
+		| string
+		| ((title: string, items: string[]) => string | undefined);
+	input?:
+		| string
+		| ((title: string, placeholder?: string) => string | undefined);
 	editor?: string | ((title: string, prefilled?: string) => string | undefined);
 }
 
@@ -111,7 +119,7 @@ export interface TestSession {
 	/** Run a conversation script */
 	run(...turns: Turn[]): Promise<void>;
 	/** Real session underneath */
-	session: any; // AgentSession — avoid import cycle
+	session: AgentSession;
 	/** Working directory */
 	cwd: string;
 	/** Collected events */
@@ -172,6 +180,14 @@ export interface SandboxOptions {
 		mockTools?: Record<string, MockToolHandler>;
 		script: Turn[];
 	};
+	/**
+	 * Custom npm command and arguments for pack/install.
+	 * Default: [process.platform === "win32" ? "npm.cmd" : "npm"]
+	 * Use ["sfw", "npm"] to run through Socket Firewall, or provide
+	 * an array like ["/usr/local/bin/node", "/path/to/npm_cli.js"]
+	 * for a non-standard npm executable.
+	 */
+	npmCommand?: string[];
 }
 
 export interface SandboxResult {

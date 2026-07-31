@@ -1,9 +1,41 @@
-import { describe, it, expect } from "vitest";
-import { createTestSession, when, calls, says } from "../src/index.js";
+import { describe, it, expect, afterEach } from "vitest";
+import {
+	createTestSession,
+	when,
+	calls,
+	says,
+	type TestSession,
+	type TestSessionOptions,
+} from "../src/index.js";
+
+/**
+ * Track live sessions so a timed-out test cannot cascade into later tests.
+ * Happy-path tests dispose their own session (removing it from the tracker);
+ * afterEach disposes any session left behind by a failure or timeout, exactly
+ * once — double-dispose is avoided because the tracker removes before dispose.
+ */
+const liveSessions = new Set<TestSession>();
+
+async function createSession(
+	options: TestSessionOptions = {},
+): Promise<TestSession> {
+	const session = await createTestSession(options);
+	liveSessions.add(session);
+	return session;
+}
+
+function disposeSession(session: TestSession): void {
+	if (liveSessions.delete(session)) session.dispose();
+}
+
+afterEach(() => {
+	for (const session of liveSessions) session.dispose();
+	liveSessions.clear();
+});
 
 describe("TestSession integration", () => {
 	it("runs a simple say-only playbook", async () => {
-		const t = await createTestSession({
+		const t = await createSession({
 			mockTools: {
 				bash: "ok",
 				read: "contents",
@@ -21,11 +53,11 @@ describe("TestSession integration", () => {
 		expect(t.playbook.consumed).toBe(1);
 		expect(t.playbook.remaining).toBe(0);
 
-		t.dispose();
+		disposeSession(t);
 	});
 
 	it("runs a tool call + say sequence", async () => {
-		const t = await createTestSession({
+		const t = await createSession({
 			mockTools: {
 				bash: (params) => `$ ${(params as any).command}\nfile1.txt`,
 				read: "contents",
@@ -46,11 +78,11 @@ describe("TestSession integration", () => {
 		expect(t.events.toolResultsFor("bash")[0].text).toContain("file1.txt");
 		expect(t.events.toolResultsFor("bash")[0].mocked).toBe(true);
 
-		t.dispose();
+		disposeSession(t);
 	});
 
 	it("runs multi-turn conversation", async () => {
-		const t = await createTestSession({
+		const t = await createSession({
 			mockTools: {
 				bash: "ok",
 				read: "contents",
@@ -72,11 +104,11 @@ describe("TestSession integration", () => {
 		expect(t.playbook.consumed).toBe(3); // call + say + say
 		expect(t.events.toolCallsFor("bash")).toHaveLength(1);
 
-		t.dispose();
+		disposeSession(t);
 	});
 
 	it("captures UI calls from extensions", async () => {
-		const t = await createTestSession({
+		const t = await createSession({
 			extensionFactories: [
 				(pi: any) => {
 					pi.on("agent_start", async (_event: any, ctx: any) => {
@@ -102,13 +134,13 @@ describe("TestSession integration", () => {
 		expect(notifies.length).toBeGreaterThanOrEqual(1);
 		expect(notifies.some((n) => n.args[0] === "Agent starting!")).toBe(true);
 
-		t.dispose();
+		disposeSession(t);
 	});
 
 	it("extension tool executes for real", async () => {
 		const executed: string[] = [];
 
-		const t = await createTestSession({
+		const t = await createSession({
 			extensionFactories: [
 				(pi: any) => {
 					const { Type } = require("typebox");
@@ -149,11 +181,11 @@ describe("TestSession integration", () => {
 		expect(t.events.toolResultsFor("my_tool")[0].text).toBe("received: hello");
 		expect(t.events.toolResultsFor("my_tool")[0].mocked).toBe(false);
 
-		t.dispose();
+		disposeSession(t);
 	});
 
 	it("late-bound params with .then() callback", async () => {
-		const t = await createTestSession({
+		const t = await createSession({
 			extensionFactories: [
 				(pi: any) => {
 					const { Type } = require("typebox");
@@ -204,13 +236,13 @@ describe("TestSession integration", () => {
 		expect(thingId).toBe("THING-abc123");
 		expect(t.events.toolResultsFor("use_thing")[0].text).toBe("using: THING-abc123");
 
-		t.dispose();
+		disposeSession(t);
 	});
 
 	it("UI mock responds to confirm", async () => {
 		let confirmResult: boolean | undefined;
 
-		const t = await createTestSession({
+		const t = await createSession({
 			extensionFactories: [
 				(pi: any) => {
 					const { Type } = require("typebox");
@@ -252,11 +284,11 @@ describe("TestSession integration", () => {
 		expect(t.events.uiCallsFor("confirm")).toHaveLength(1);
 		expect(t.events.uiCallsFor("confirm")[0].returnValue).toBe(false);
 
-		t.dispose();
+		disposeSession(t);
 	});
 
 	it("auto-asserts playbook consumed", async () => {
-		const t = await createTestSession({
+		const t = await createSession({
 			mockTools: {
 				bash: "ok",
 				read: "contents",
@@ -275,6 +307,6 @@ describe("TestSession integration", () => {
 			t.run(when("Test", [says("Done.")]))
 		).resolves.toBeUndefined();
 
-		t.dispose();
+		disposeSession(t);
 	});
 });
