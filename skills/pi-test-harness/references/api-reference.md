@@ -1,6 +1,6 @@
 # API reference
 
-Type definitions and the event-collection API for `@abdwhb-png/pi-test-harness` v0.7.0 (Pi 0.83.x). Use this as a reference when authoring assertions or tracing through snippets.
+Type definitions and the event-collection API for `@abdwhb-png/pi-test-harness` v0.7.0 (Pi 0.84.x). Use this as a reference when authoring assertions or tracing through snippets.
 
 ## Table of contents
 
@@ -433,7 +433,7 @@ interface MockPi {
 
 ## `ToolBlockedError`
 
-Exported for source compatibility with upstream consumers, but **not promised** by normal Pi 0.83 runs through `AgentSession`. The canonical block signal is the event records: `blocked: true`/`blockReason` on the `ToolCallRecord` and `isError: true` + result text on the `ToolResultRecord` — assert those instead.
+Exported for source compatibility with upstream consumers, but **not promised** by normal Pi 0.84 runs through `AgentSession`. The canonical block signal is the event records: `blocked: true`/`blockReason` on the `ToolCallRecord` and `isError: true` + result text on the `ToolResultRecord` — assert those instead.
 
 ```typescript
 import {
@@ -450,7 +450,7 @@ const result = t.events.toolResultsFor("bash")[0];
 expect(result.isError).toBe(true);
 ```
 
-Do not rely on `instanceof ToolBlockedError` to detect a hook block from a normal Pi 0.83 run. See `mock-tools.md` for the event-assertion patterns.
+Do not rely on `instanceof ToolBlockedError` to detect a hook block from a normal Pi 0.84 run. See `mock-tools.md` for the event-assertion patterns.
 
 ---
 

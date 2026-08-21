@@ -16,9 +16,9 @@ metadata:
 
 # pi-test-harness
 
-`@abdwhb-png/pi-test-harness` is a maintained fork of Marc Fargas' MIT-licensed [pi-test-harness](https://github.com/marcfargas/pi-test-harness) for [Pi](https://github.com/earendil-works/pi-coding-agent) extensions, targeting **Pi 0.83.x only**. It keeps the upstream API and credits Marc Fargas' original work (pi-powershell, pi-tramp, pi-planner, etc.; note that pi itself is maintained by Mario Zechner / earendil-works, not the same person). Its job: let you exercise **real** extension code paths (tool registration, hooks, session events, UI prompts) in any test runner with zero LLM calls and full determinism.
+`@abdwhb-png/pi-test-harness` is a maintained fork of Marc Fargas' MIT-licensed [pi-test-harness](https://github.com/marcfargas/pi-test-harness) for [Pi](https://github.com/earendil-works/pi-coding-agent) extensions, targeting **Pi 0.84.x only**. It keeps the upstream API and credits Marc Fargas' original work (pi-powershell, pi-tramp, pi-planner, etc.; note that pi itself is maintained by Mario Zechner / earendil-works, not the same person). Its job: let you exercise **real** extension code paths (tool registration, hooks, session events, UI prompts) in any test runner with zero LLM calls and full determinism.
 
-> **Verify before use**: this skill snapshots the fork README as of harness v0.7.0 (Pi 0.83.x). If the API ends up looking subtly different, re-fetch the README from https://github.com/abdwhb-png/pi-test-harness before trusting any snippet here. Note: the harness version (e.g. `0.7.0`) and the Pi version (e.g. `0.83.x`) are **independent release tracks** — do not compare them numerically.
+> **Verify before use**: this skill snapshots the fork README as of harness v0.7.0 (Pi 0.84.x). If the API ends up looking subtly different, re-fetch the README from https://github.com/abdwhb-png/pi-test-harness before trusting any snippet here. Note: the harness version (e.g. `0.7.0`) and the Pi version (e.g. `0.84.x`) are **independent release tracks** — do not compare them numerically.
 
 ## The mental model: "let pi be pi"
 
@@ -283,7 +283,7 @@ For `ToolCallRecord`, `ToolResultRecord`, and `UICallRecord` shapes — and the 
 
 ## Handling blocked tools
 
-When an extension hook blocks a mocked tool, the canonical signal is the event record: `blocked: true` + `blockReason` on the `ToolCallRecord`, and `isError: true` + result text on the `ToolResultRecord`. Assert those fields — `ToolBlockedError` is still exported for source compatibility, but normal Pi 0.83 runs through `AgentSession` do not promise to throw it:
+When an extension hook blocks a mocked tool, the canonical signal is the event record: `blocked: true` + `blockReason` on the `ToolCallRecord`, and `isError: true` + result text on the `ToolResultRecord`. Assert those fields — `ToolBlockedError` is still exported for source compatibility, but normal Pi 0.84 runs through `AgentSession` do not promise to throw it:
 
 ```typescript
 import {
@@ -403,7 +403,7 @@ If your extension registers a tool named `my_tool`, don't also put `my_tool` in 
 Pi extensions that open a SQLite DB (memory extensions, etc.) keep the file handle for the test process's lifetime. Skipping `dispose()` + `safeRmSync()` causes cross-test contamination and `EPERM` on Windows. See the "Windows + SQLite" section.
 
 **3. Mocking a tool that an extension hook will block.**
-When your hook blocks a call (plan mode, dangerous command), the mock handler never executes. Assert the block via the event records — `blocked: true`/`blockReason` on the `ToolCallRecord` and `isError: true` on the `ToolResultRecord` — rather than expecting a `ToolBlockedError` throw from normal Pi 0.83 runs.
+When your hook blocks a call (plan mode, dangerous command), the mock handler never executes. Assert the block via the event records — `blocked: true`/`blockReason` on the `ToolCallRecord` and `isError: true` on the `ToolResultRecord` — rather than expecting a `ToolBlockedError` throw from normal Pi 0.84 runs.
 
 **4. Assuming hooks fire on the mock path.**
 Pi's `tool_call` / `tool_result` hooks **do** fire for mocked tools through `AgentSession`'s hook pipeline, but lifecycle hooks (`session_start`, `session_shutdown`) follow Pi's normal timing. `session_shutdown` only fires on process exit — `dispose()` will not trigger it. Plan accordingly.
@@ -412,7 +412,7 @@ Pi's `tool_call` / `tool_result` hooks **do** fire for mocked tools through `Age
 `createMockPi` replaces only the `pi` executable. Load or import the real extension code that spawns it; never paste a local copy of the subprocess helper into the test, because that can pass while the extension is broken.
 
 **6. Trusting the snapshot blindly.**
-The `description` and code in this skill are pinned to fork v0.7.0 (Pi 0.83.x). On any minor bump, re-fetch the fork README and reconcile before trusting snippets.
+The `description` and code in this skill are pinned to fork v0.7.0 (Pi 0.84.x). On any minor bump, re-fetch the fork README and reconcile before trusting snippets.
 
 ## Test-layer summary
 
@@ -431,7 +431,7 @@ npm install --save-dev @abdwhb-png/pi-test-harness
 In `~/.pi/agent`, the fork is consumed as a local dev dependency:
 `bun add --dev file:../../projects/pi-integrations/pi-test-harness/dist/package.tgz`
 
-Peer dependencies (Pi line `0.83.x` only):
+Peer dependencies (Pi line `0.84.x` only):
 
 - `@earendil-works/pi-coding-agent` ^0.83.0
 - `@earendil-works/pi-ai` ^0.83.0

@@ -1,7 +1,7 @@
 /**
- * Pi 0.83 compatibility tests.
+ * Pi 0.84 compatibility tests.
  *
- * These tests verify that the harness works correctly with Pi 0.83 APIs:
+ * These tests verify that the harness works correctly with Pi 0.84 APIs:
  *   - ModelRuntime isolation (no credentials, no ~/.pi touch)
  *   - Public Agent APIs (streamFunction, state.tools, waitForIdle)
  *   - AgentSession hooks (beforeToolCall / afterToolCall installed by AgentSession)
@@ -19,18 +19,22 @@ import {
 	type TestSession,
 } from "../src/index.js";
 
-describe("Pi 0.83 compat — isolated session", () => {
-	it("dummy runtime API key refresh is offline (no network hang)", async () => {
-		// Regression: ModelRuntime.create's initial refresh is offline, but
-		// setRuntimeApiKey(provider, key) without options defaults
-		// refreshOptions.allowNetwork to modelNetworkEnabled, which is true
-		// when PI_OFFLINE is unset — so the dummy-key call could trigger a
-		// remote availability refresh and hang fresh processes.
+describe("Pi 0.84 compat — isolated session", () => {
+	it("dummy runtime API key synchronization stays offline", async () => {
+		// Pi 0.84 owns the offline credential synchronization policy. The
+		// harness must not pass the removed allowNetwork option, and session
+		// initialization must not attempt a network request.
 		type RefreshOptions = Parameters<
 			typeof ModelRuntime.prototype.setRuntimeApiKey
 		>[2];
 		const original = ModelRuntime.prototype.setRuntimeApiKey;
 		const captured: RefreshOptions[] = [];
+		const originalFetch = globalThis.fetch;
+		let fetchCount = 0;
+		globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+			fetchCount += 1;
+			throw new Error("unexpected network request");
+		}) as typeof fetch;
 		ModelRuntime.prototype.setRuntimeApiKey = function (
 			providerId,
 			apiKey,
@@ -45,13 +49,13 @@ describe("Pi 0.83 compat — isolated session", () => {
 			t = await createTestSession();
 		} finally {
 			ModelRuntime.prototype.setRuntimeApiKey = original;
+			globalThis.fetch = originalFetch;
 			t?.dispose();
 		}
 
-		// The harness must force the dummy-key refresh offline, same as the
-		// initial ModelRuntime.create refresh.
 		expect(captured.length).toBeGreaterThan(0);
-		expect(captured.at(-1)).toEqual({ allowNetwork: false });
+		expect(captured.at(-1)).toBeUndefined();
+		expect(fetchCount).toBe(0);
 	});
 
 	it("runs a say-only playbook without credentials", async () => {
@@ -93,7 +97,7 @@ describe("Pi 0.83 compat — isolated session", () => {
 	});
 });
 
-describe("Pi 0.83 compat — hook pipeline", () => {
+describe("Pi 0.84 compat — hook pipeline", () => {
 	let t: TestSession;
 
 	afterEach(() => t?.dispose());
@@ -223,7 +227,7 @@ describe("Pi 0.83 compat — hook pipeline", () => {
 	});
 });
 
-describe("Pi 0.83 compat — ExtensionUIContext", () => {
+describe("Pi 0.84 compat — ExtensionUIContext", () => {
 	let t: TestSession;
 
 	afterEach(() => t?.dispose());

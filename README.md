@@ -2,7 +2,7 @@
 
 Test harness for [pi](https://github.com/earendil-works/pi-coding-agent) extensions — in-process session testing with playbook-driven model mocking, package install verification, and subprocess mocking.
 
-**Pi 0.83.x only.** This fork drops support for Pi <0.83.0. Requires `@earendil-works/pi-agent-core@^0.83.0`, `@earendil-works/pi-ai@^0.83.0`, and `@earendil-works/pi-coding-agent@^0.83.0`.
+**Pi 0.84.x only.** This fork targets Pi 0.84 and requires `@earendil-works/pi-agent-core@^0.84.0`, `@earendil-works/pi-ai@^0.84.0`, and `@earendil-works/pi-coding-agent@^0.84.0`.
 
 ## Why
 
@@ -24,9 +24,9 @@ The repository and published package include the canonical `pi-test-harness` ski
 
 ### Peer dependencies
 
-- `@earendil-works/pi-coding-agent` >= 0.83.0
-- `@earendil-works/pi-ai` >= 0.83.0
-- `@earendil-works/pi-agent-core` >= 0.83.0
+- `@earendil-works/pi-coding-agent` ^0.84.0
+- `@earendil-works/pi-ai` ^0.84.0
+- `@earendil-works/pi-agent-core` ^0.84.0
 
 ## Quick Start
 
@@ -97,7 +97,7 @@ Three substitution points at the boundary — everything else runs through pi's 
 | `tool.execute()` | Mock handler | Controls what tools "return" |
 | `ctx.ui.*` | Mock UI | Controls what the user "answers" |
 
-**Hook pipeline.** Pi 0.83 AgentSession installs `beforeToolCall`/`afterToolCall` on the Agent, which drive extension `tool_call`/`tool_result` events. The harness mock does **not** re-emit these hooks — each fires exactly once per tool call. Tool result modification via `tool_result` hook return values works because the session subscriber reads the finalized result from the `tool_execution_end` event.
+**Hook pipeline.** Pi 0.84 AgentSession installs `beforeToolCall`/`afterToolCall` on the Agent, which drive extension `tool_call`/`tool_result` events. The harness mock does **not** re-emit these hooks — each fires exactly once per tool call. Tool result modification via `tool_result` hook return values works because the session subscriber reads the finalized result from the `tool_execution_end` event.
 
 **ModelRuntime isolation.** The session creates an isolated `ModelRuntime` with `authPath` under the working directory and `modelsPath: null`. No credentials file is read from `~/.pi/agent`. A dummy API key is injected to satisfy AgentSession auth checks (the model is never called).
 
@@ -234,7 +234,7 @@ mockUI: {
 
 **Defaults** (when no mock config is provided): `confirm → true`, `select → first item`, `input → ""`, `editor → ""`.
 
-The mock UI context implements the full Pi 0.83 `ExtensionUIContext` interface, including `setWorkingVisible`, `setWorkingIndicator`, `setHiddenThinkingLabel`, `addAutocompleteProvider`, and `getEditorComponent` (returns `undefined`). All calls are logged in `t.events.ui`.
+The mock UI context implements the full Pi 0.84 `ExtensionUIContext` interface, including `setWorkingVisible`, `setWorkingIndicator`, `setHiddenThinkingLabel`, `addAutocompleteProvider`, and `getEditorComponent` (returns `undefined`). All calls are logged in `t.events.ui`.
 
 ## Event Collection
 
@@ -521,7 +521,7 @@ interface MockUIConfig {
 
 ### `ToolBlockedError`
 
-Kept for backward compatibility. In Pi 0.83, tool blocking is handled by AgentSession's `beforeToolCall` before `execute()` is reached, so `ToolBlockedError` is no longer thrown by the mock flow. It remains exported for instanceof checks on errors from event callbacks:
+Kept for backward compatibility. In Pi 0.84, tool blocking is handled by AgentSession's `beforeToolCall` before `execute()` is reached, so `ToolBlockedError` is no longer thrown by the mock flow. It remains exported for instanceof checks on errors from event callbacks:
 
 ```typescript
 import { ToolBlockedError } from "@abdwhb-png/pi-test-harness";
@@ -622,14 +622,14 @@ Only the LLM boundary is replaced — because that's the one thing you **can't**
 CI runs in two stages:
 
 1. **Verify** on Linux/Node 24: lint, typecheck, unit tests, build, audit (`sfw npm audit`), and a packed-consumer import smoke test (`sfw npm install` with exact peers).
-2. **Integration matrix** after verify passes: Linux + Windows, Node 22 + 24, Pi 0.83.0 (locked).
+2. **Integration matrix** after verify passes: Linux + Windows, Node 22 + 24, Pi 0.84.2 (locked).
 
 The unit suite covers the playbook DSL and subprocess `createMockPi()` shim. The integration suite covers real in-process Pi sessions, extension loading, tool registration/execution, hooks, UI mocking, sandbox package install verification, regression cases, and Windows-safe cleanup behavior.
 
 Known intentional gaps:
 
 - No real LLM/provider calls; the harness replaces the model boundary by design.
-- No compatibility testing for the deprecated `@mariozechner/*` Pi packages or Pi <0.83.0.
+- No compatibility testing for the deprecated `@mariozechner/*` Pi packages or Pi <0.84.0.
 - Concurrent/parallel tool execution is not yet deeply exercised. Today the playbook emits one tool call per assistant message, which is deterministic and good for most extension tests. To test true Pi parallelism, the harness should grow a grouped/batched call action that emits multiple `toolCall` blocks in one assistant message, then assert result collection by `toolCallId` rather than completion order.
 - Edge cases still worth adding over time: command/input/before-agent hooks, tool-result hook mutation, multiple extensions interacting, install failure modes, malformed package metadata, ESM/CJS fixture packages, cleanup failure paths, and concurrent `createMockPi()` subprocess consumers.
 

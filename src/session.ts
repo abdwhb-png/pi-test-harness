@@ -77,13 +77,8 @@ export async function createTestSession(
 
 	// Provide a dummy API key so AgentSession.prompt does not reject before
 	// the playbook replaces streamFunction. The key is never sent to any LLM.
-	// Both the initial ModelRuntime.create refresh and this key refresh must be
-	// offline: allowNetwork defaults to modelNetworkEnabled (true when PI_OFFLINE
-	// is unset), which would trigger a remote availability refresh for a key
-	// that is only a placeholder — hanging fresh processes on network stalls.
-	await modelRuntime.setRuntimeApiKey("openai", "sk-test-harness-dummy", {
-		allowNetwork: false,
-	});
+	// Pi 0.84 synchronizes runtime credentials with an offline model refresh.
+	await modelRuntime.setRuntimeApiKey("openai", "sk-test-harness-dummy");
 
 	const { session, extensionsResult } = await createAgentSession({
 		cwd,
@@ -109,7 +104,7 @@ export async function createTestSession(
 	const events = createEventCollector();
 	let currentStep = 0;
 	let mockedToolNames: ReadonlySet<string> = new Set();
-	// toolCallIds whose mock returned a ToolResult with isError:true — Pi 0.83
+	// toolCallIds whose mock returned a ToolResult with isError:true — Pi 0.84
 	// hardcodes successful execute() as non-error, so records must consult this.
 	let mockedErrorToolCallIds: ReadonlySet<string> = new Set();
 

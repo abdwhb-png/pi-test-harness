@@ -54,13 +54,13 @@ const tarball = join(root, filename);
 const consumerDir = mkdtempSync(join(tmpdir(), "pi-test-harness-consumer-"));
 
 try {
-	// 3. Install via sfw with exact Pi 0.83.0 peers
+// 3. Install via sfw with exact Pi 0.84.2 peers
 	writeFileSync(
 		join(consumerDir, "package.json"),
 		JSON.stringify({ type: "module", private: true }, null, 2),
 	);
 
-	console.log("Installing package + exact Pi 0.83.0 peers via sfw...");
+	console.log("Installing package + exact Pi 0.84.2 peers via sfw...");
 	sfwRun(
 		[
 			"npm",
@@ -68,9 +68,9 @@ try {
 			"--silent",
 			"--save-exact",
 			tarball,
-			"@earendil-works/pi-agent-core@0.83.0",
-			"@earendil-works/pi-ai@0.83.0",
-			"@earendil-works/pi-coding-agent@0.83.0",
+			"@earendil-works/pi-agent-core@0.84.2",
+			"@earendil-works/pi-ai@0.84.2",
+			"@earendil-works/pi-coding-agent@0.84.2",
 		],
 		{ cwd: consumerDir },
 	);

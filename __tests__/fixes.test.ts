@@ -6,7 +6,7 @@
  *   2. No double-wrap on multiple run() calls
  *   3. ToolBlockedError exported and instanceof-checkable
  *   4. safeRmSync swallows EPERM / handles missing files
- *   5. Mock handler ToolResult {isError:true} recorded as error despite Pi 0.83
+ *   5. Mock handler ToolResult {isError:true} recorded as error despite Pi 0.84
  */
 
 import { describe, it, expect } from "vitest";
@@ -306,7 +306,7 @@ describe("safeRmSync", () => {
 	});
 });
 
-describe("mock handler isError propagation (Pi 0.83 fix)", () => {
+describe("mock handler isError propagation (Pi 0.84 fix)", () => {
 	it("records isError=true when mock returns ToolResult with isError: true", async () => {
 		const t = await createTestSession({
 			mockTools: {

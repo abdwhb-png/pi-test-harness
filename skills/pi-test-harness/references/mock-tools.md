@@ -144,7 +144,7 @@ To capture errors as tool results instead of aborting, set:
 
 ## Blocked tools: assert the event records
 
-When an extension's `tool_call` hook blocks a tool call, the canonical signals are the collected event records: `blocked: true` + `blockReason` on the `ToolCallRecord`, and `isError: true` + result text on the `ToolResultRecord`. Assert those — the package still exports `ToolBlockedError` for source compatibility, but a normal Pi 0.83 run through `AgentSession` does not promise to throw it.
+When an extension's `tool_call` hook blocks a tool call, the canonical signals are the collected event records: `blocked: true` + `blockReason` on the `ToolCallRecord`, and `isError: true` + result text on the `ToolResultRecord`. Assert those — the package still exports `ToolBlockedError` for source compatibility, but a normal Pi 0.84 run through `AgentSession` does not promise to throw it.
 
 ### Pattern A: assert via events after the fact
 
@@ -167,10 +167,10 @@ Note: the playbook **continues** after a block — the block surfaces as a tool 
 
 ### Combining `propagateErrors` with blocks
 
-Regardless of `propagateErrors`, the call record carries `blocked: true` and `blockReason: "..."` so you can assert the hook fired. With `propagateErrors: false`, blocked calls also surface as `isError: true` in the result record and the playbook continues. Do not rely on a `ToolBlockedError` throw from normal Pi 0.83 runs.
+Regardless of `propagateErrors`, the call record carries `blocked: true` and `blockReason: "..."` so you can assert the hook fired. With `propagateErrors: false`, blocked calls also surface as `isError: true` in the result record and the playbook continues. Do not rely on a `ToolBlockedError` throw from normal Pi 0.84 runs.
 
 ## Common pitfalls
 
 - **Listing your extension's own tool in `mockTools`**. If you do, your tool's `execute()` never runs and you're testing nothing. Remove it.
-- **Expecting `calls(...)` to throw `ToolBlockedError` on a block**. Normal Pi 0.83 runs do not promise that throw; assert the canonical event records (`blocked`, `blockReason`, `isError`, result text) instead. If you want the playbook to keep flowing, set `propagateErrors: false` and read `.isError`.
+- **Expecting `calls(...)` to throw `ToolBlockedError` on a block**. Normal Pi 0.84 runs do not promise that throw; assert the canonical event records (`blocked`, `blockReason`, `isError`, result text) instead. If you want the playbook to keep flowing, set `propagateErrors: false` and read `.isError`.
 - **Mocking a tool the extension doesn't actually call**. The mock is harmless but adds noise; trim the list to what the test exercises.

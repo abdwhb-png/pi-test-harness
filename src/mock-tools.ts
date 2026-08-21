@@ -83,7 +83,7 @@ function normalizeMockResult(
  *
  * Returns a Set of mocked tool names for the session subscriber to set the
  * mocked flag on recorded results, plus a Set of toolCallIds whose mock
- * returned a ToolResult with isError:true. Pi 0.83's agent loop hardcodes
+ * returned a ToolResult with isError:true. Pi 0.84's agent loop hardcodes
  * successful execute() as non-error (isError:false), so the subscriber must
  * consult this set to preserve the mock's error intent in collected records.
  */
@@ -120,7 +120,7 @@ export function interceptToolExecution(
 					.map((c) => c.text)
 					.join("\n");
 				if (result.isError) {
-					// Pi 0.83 hardcodes successful execute() as non-error; remember the
+					// Pi 0.84 hardcodes successful execute() as non-error; remember the
 					// toolCallId so the session subscriber can flag the record.
 					mockedErrorToolCallIds.add(toolCallId);
 				}
