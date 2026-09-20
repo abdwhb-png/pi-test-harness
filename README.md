@@ -2,7 +2,7 @@
 
 Test harness for [pi](https://github.com/earendil-works/pi-coding-agent) extensions — in-process session testing with playbook-driven model mocking, package install verification, and subprocess mocking.
 
-**Pi 0.84.x only.** This fork targets Pi 0.84 and requires `@earendil-works/pi-agent-core@^0.84.0`, `@earendil-works/pi-ai@^0.84.0`, and `@earendil-works/pi-coding-agent@^0.84.0`.
+**Pi 0.85.x only.** This fork targets Pi 0.85 and requires `@earendil-works/pi-agent-core@^0.85.0`, `@earendil-works/pi-ai@^0.85.0`, and `@earendil-works/pi-coding-agent@^0.85.0`.
 
 ## Why
 
@@ -24,9 +24,9 @@ The repository and published package include the canonical `pi-test-harness` ski
 
 ### Peer dependencies
 
-- `@earendil-works/pi-coding-agent` ^0.84.0
-- `@earendil-works/pi-ai` ^0.84.0
-- `@earendil-works/pi-agent-core` ^0.84.0
+- `@earendil-works/pi-coding-agent` ^0.85.0
+- `@earendil-works/pi-ai` ^0.85.0
+- `@earendil-works/pi-agent-core` ^0.85.0
 
 ## Quick Start
 
@@ -615,21 +615,24 @@ Files are cleaned by the OS when the process exits. Use unique DB paths per test
 
 The harness minimizes substitution. Extensions load through pi's real loader (jiti). Tools go through pi's real wrapping pipeline. Hooks fire through AgentSession's `beforeToolCall`/`afterToolCall`. Events flow through pi's real event system.
 
+Loading runs in the same loader configuration pi's shipped runtimes use. Pi builds its jiti options from how pi itself is running, and the branch an in-process harness lands on leaves jiti's native import fast-path at a default that depends on the test runner (enabled under Bun, off under Node). That default changes what a path-loaded extension observes — an entrypoint with a module-level `await import(...)` could be handed to pi before its module body finished evaluating. `withoutJitiNativeImport` pins the choice the shipped runtimes make, so `extensions: [...]` behaves the same under vitest and `bun test`.
+
 Only the LLM boundary is replaced — because that's the one thing you **can't** run in a deterministic test. Real-provider smoke tests belong in the application or extension that owns the provider configuration, not in this harness.
 
 ## Testing Scope
 
-CI runs in two stages:
+CI runs in three stages:
 
-1. **Verify** on Linux/Node 24: lint, typecheck, unit tests, build, audit (`sfw npm audit`), and a packed-consumer import smoke test (`sfw npm install` with exact peers).
-2. **Integration matrix** after verify passes: Linux + Windows, Node 22 + 24, Pi 0.84.2 (locked).
+1. **Verify** on Linux/Node 24: lint, typecheck, unit tests, build, audit (`sfw npm audit`), and a packed-consumer import smoke test (`sfw npm install` with the peers declared in `package.json`).
+2. **Integration matrix** after verify passes: Linux + Windows, Node 22 + 24, Pi 0.85.x (locked by `devDependencies`).
+3. **Extension loading under Bun** after verify passes: Linux, Bun 1.3.14, running the path-loaded extension cases (`npm run test:bun`). Bun enables jiti's native import fast-path, so this is the only runner that catches a regression in top-level-await entrypoint loading.
 
 The unit suite covers the playbook DSL and subprocess `createMockPi()` shim. The integration suite covers real in-process Pi sessions, extension loading, tool registration/execution, hooks, UI mocking, sandbox package install verification, regression cases, and Windows-safe cleanup behavior.
 
 Known intentional gaps:
 
 - No real LLM/provider calls; the harness replaces the model boundary by design.
-- No compatibility testing for the deprecated `@mariozechner/*` Pi packages or Pi <0.84.0.
+- No compatibility testing for the deprecated `@mariozechner/*` Pi packages or Pi <0.85.0.
 - Concurrent/parallel tool execution is not yet deeply exercised. Today the playbook emits one tool call per assistant message, which is deterministic and good for most extension tests. To test true Pi parallelism, the harness should grow a grouped/batched call action that emits multiple `toolCall` blocks in one assistant message, then assert result collection by `toolCallId` rather than completion order.
 - Edge cases still worth adding over time: command/input/before-agent hooks, tool-result hook mutation, multiple extensions interacting, install failure modes, malformed package metadata, ESM/CJS fixture packages, cleanup failure paths, and concurrent `createMockPi()` subprocess consumers.
 

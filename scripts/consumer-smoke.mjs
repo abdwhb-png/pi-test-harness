@@ -26,8 +26,27 @@ function sfwRun(args, options = {}) {
 }
 
 const root = resolve(import.meta.dirname, "..");
-const { name: PACKAGE_NAME } = JSON.parse(
+
+/** Read and parse JSON, exiting with the offending source instead of a bare stack. */
+function readJson(source, label) {
+	try {
+		return JSON.parse(source);
+	} catch (err) {
+		console.error(`Failed to parse ${label}:`, err.message);
+		process.exit(1);
+	}
+}
+
+const { name: PACKAGE_NAME, peerDependencies = {} } = readJson(
 	readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+	"package.json",
+);
+
+// Install the peers the manifest actually declares, instead of a second copy of
+// the Pi version pinned here. Hardcoding it here meant the smoke kept testing a
+// Pi line the package no longer claimed to support.
+const peerSpecs = Object.entries(peerDependencies).map(
+	([dependency, range]) => `${dependency}@${range}`,
 );
 
 // 1. Pack the package
@@ -35,7 +54,7 @@ const packOutput = execFileSync("npm", ["pack", "--json"], {
 	cwd: root,
 	encoding: "utf8",
 });
-const packResult = JSON.parse(packOutput);
+const packResult = readJson(packOutput, "npm pack output");
 // npm pack --json may return an array (older) or object keyed by name (newer)
 const packEntry = Array.isArray(packResult)
 	? packResult[0]
@@ -54,26 +73,18 @@ const tarball = join(root, filename);
 const consumerDir = mkdtempSync(join(tmpdir(), "pi-test-harness-consumer-"));
 
 try {
-// 3. Install via sfw with exact Pi 0.84.2 peers
+	// 3. Install via sfw with the peers declared in package.json
 	writeFileSync(
 		join(consumerDir, "package.json"),
 		JSON.stringify({ type: "module", private: true }, null, 2),
 	);
 
-	console.log("Installing package + exact Pi 0.84.2 peers via sfw...");
-	sfwRun(
-		[
-			"npm",
-			"install",
-			"--silent",
-			"--save-exact",
-			tarball,
-			"@earendil-works/pi-agent-core@0.84.2",
-			"@earendil-works/pi-ai@0.84.2",
-			"@earendil-works/pi-coding-agent@0.84.2",
-		],
-		{ cwd: consumerDir },
+	console.log(
+		`Installing package + declared peers via sfw (${peerSpecs.join(", ")})...`,
 	);
+	sfwRun(["npm", "install", "--silent", "--save-exact", tarball, ...peerSpecs], {
+		cwd: consumerDir,
+	});
 
 	// 4. Verify imports and run a real session
 	writeFileSync(

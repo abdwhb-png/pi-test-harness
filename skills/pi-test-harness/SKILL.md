@@ -16,9 +16,9 @@ metadata:
 
 # pi-test-harness
 
-`@abdwhb-png/pi-test-harness` is a maintained fork of Marc Fargas' MIT-licensed [pi-test-harness](https://github.com/marcfargas/pi-test-harness) for [Pi](https://github.com/earendil-works/pi-coding-agent) extensions, targeting **Pi 0.84.x only**. It keeps the upstream API and credits Marc Fargas' original work (pi-powershell, pi-tramp, pi-planner, etc.; note that pi itself is maintained by Mario Zechner / earendil-works, not the same person). Its job: let you exercise **real** extension code paths (tool registration, hooks, session events, UI prompts) in any test runner with zero LLM calls and full determinism.
+`@abdwhb-png/pi-test-harness` is a maintained fork of Marc Fargas' MIT-licensed [pi-test-harness](https://github.com/marcfargas/pi-test-harness) for [Pi](https://github.com/earendil-works/pi-coding-agent) extensions, targeting **Pi 0.85.x only**. It keeps the upstream API and credits Marc Fargas' original work (pi-powershell, pi-tramp, pi-planner, etc.; note that pi itself is maintained by Mario Zechner / earendil-works, not the same person). Its job: let you exercise **real** extension code paths (tool registration, hooks, session events, UI prompts) in any test runner with zero LLM calls and full determinism.
 
-> **Verify before use**: this skill snapshots the fork README as of harness v0.7.0 (Pi 0.84.x). If the API ends up looking subtly different, re-fetch the README from https://github.com/abdwhb-png/pi-test-harness before trusting any snippet here. Note: the harness version (e.g. `0.7.0`) and the Pi version (e.g. `0.84.x`) are **independent release tracks** — do not compare them numerically.
+> **Verify before use**: this skill snapshots the fork README as of harness v0.7.0 (Pi 0.85.x). If the API ends up looking subtly different, re-fetch the README from <https://github.com/abdwhb-png/pi-test-harness> before trusting any snippet here. Note: the harness version (e.g. `0.7.0`) and the Pi version (e.g. `0.85.x`) are **independent release tracks** — do not compare them numerically.
 
 ## The mental model: "let pi be pi"
 
@@ -83,11 +83,13 @@ This skill's snippets use the Vitest import for concreteness (the upstream READM
 This harness pays the cost of booting a real Pi session (jiti, tool wrapping, hook runner, event system). That cost is justified when you actually need it and pure noise when you don't.
 
 **Use plain `bun:test` / Vitest / Jest instead when:**
+
 - Testing **pure helpers** (string formatting, JSON transforms, schema validation, math) that don't touch `ctx`, the tool registry, or hooks.
 - Testing **imports** in isolation — `mock.module()` + `await import()` is faster and sufficient.
 - Testing **type shapes** — `tsc --noEmit` or a `expectTypeOf` check needs no runtime.
 
 **Reach for this harness when the test must exercise:**
+
 - Tool registration (your extension calls `ctx.registerTool(...)`).
 - Hook behavior (`tool_call`, `tool_result`, `session_start`, plan-mode gating).
 - Multi-step agent flow (tool A output feeds tool B input).
@@ -144,13 +146,13 @@ Read it like this: `createTestSession` boots a real Pi session, loads `./src/ind
 Each entry in the `extensions` array follows Pi's normal extension resolution rules. The harness itself does not invent a new format. Pi's loader accepts **literal paths only — no glob expansion** (`*`, `?`, `{}` are treated as literal characters and the entry is silently skipped if the resulting path doesn't exist). Any of these work:
 
 | Form | Example | Resolves to |
-|------------|------------------------------------------|-----------------------------------------------|
+| ------------ | ------------------------------------------ | ----------------------------------------------- |
 | Relative path | `"./src/index.ts"` | Relative to the test process CWD |
 | Absolute path | `"/abs/path/to/index.ts"` | Used as-is |
 | Tilde path | `"~/path/to/ext.ts"` | Expanded via tilde, then used as-is |
 | Directory path | `"./extensions"` | Pi enumerates `*.ts` / `*.js` direct children (one level deep, not glob) |
 
-If your test runs from your package root, `"./src/index.ts"` is correct. Paths are resolved by Pi's real extension loader (via jiti), so anything Pi's CLI accepts in `-e` or `settings.json` `extensions:` config is accepted here too.
+If your test runs from your package root, `"./src/index.ts"` is correct. Paths are resolved by Pi's real extension loader (via jiti), so anything Pi's CLI accepts in `-e` or `settings.json` `extensions:` config is accepted here too. Entrypoints are evaluated in the loader configuration Pi's shipped runtimes use, so `extensions: [...]` behaves the same under vitest and `bun test` — including entrypoints that use a module-level `await import(...)`.
 
 **Distributed packages are a different field.** Don't put them in `extensions:`. Use Pi's `packages:` config (with `npm:`/`git:`/`github:` prefixes) or `pi install <pkg>`, then let the package's `package.json` `pi.extensions` field point at the entry file(s):
 
@@ -359,7 +361,7 @@ mockPi.uninstall();                     // restore PATH, delete temp dir
 ```
 
 | Field | Type | Default | Description |
-|-------|------|---------|-------------|
+| ------- | ------ | --------- | ------------- |
 | `output` | `string` | echo task | Text in the `message_end` event |
 | `exitCode` | `number` | `0` | Process exit code |
 | `stderr` | `string` | — | Written to stderr |
@@ -412,7 +414,7 @@ Pi's `tool_call` / `tool_result` hooks **do** fire for mocked tools through `Age
 `createMockPi` replaces only the `pi` executable. Load or import the real extension code that spawns it; never paste a local copy of the subprocess helper into the test, because that can pass while the extension is broken.
 
 **6. Trusting the snapshot blindly.**
-The `description` and code in this skill are pinned to fork v0.7.0 (Pi 0.84.x). On any minor bump, re-fetch the fork README and reconcile before trusting snippets.
+The `description` and code in this skill are pinned to fork v0.7.0 (Pi 0.85.x). On any minor bump, re-fetch the fork README and reconcile before trusting snippets.
 
 ## Test-layer summary
 
@@ -431,11 +433,11 @@ npm install --save-dev @abdwhb-png/pi-test-harness
 In `~/.pi/agent`, the fork is consumed as a local dev dependency:
 `bun add --dev file:../../projects/pi-integrations/pi-test-harness/dist/package.tgz`
 
-Peer dependencies (Pi line `0.84.x` only):
+Peer dependencies (Pi line `0.85.x` only):
 
-- `@earendil-works/pi-coding-agent` ^0.83.0
-- `@earendil-works/pi-ai` ^0.83.0
-- `@earendil-works/pi-agent-core` ^0.83.0
+- `@earendil-works/pi-coding-agent` ^0.85.0
+- `@earendil-works/pi-ai` ^0.85.0
+- `@earendil-works/pi-agent-core` ^0.85.0
 
 ## Reference index
 

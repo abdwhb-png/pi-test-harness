@@ -54,13 +54,14 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ __tests__/",
     "test:unit": "vitest run __tests__/playbook.test.ts __tests__/mock-pi.test.ts",
-    "test:integration": "vitest run __tests__/integration.test.ts __tests__/sandbox.test.ts __tests__/fixes.test.ts __tests__/pi-084-compat.test.ts __tests__/prepare-package.test.ts",
+    "test:integration": "vitest run __tests__/integration.test.ts __tests__/extension-loading.test.ts __tests__/sandbox.test.ts __tests__/fixes.test.ts __tests__/pi-085-compat.test.ts __tests__/prepare-package.test.ts",
+    "test:bun": "bun test --isolate scripts/extension-loading-smoke.test.ts",
     "test:consumer": "node scripts/consumer-smoke.mjs"
   },
   "peerDependencies": {
-    "@earendil-works/pi-agent-core": "^0.84.0",
-    "@earendil-works/pi-ai": "^0.84.0",
-    "@earendil-works/pi-coding-agent": "^0.84.0"
+    "@earendil-works/pi-agent-core": "^0.85.0",
+    "@earendil-works/pi-ai": "^0.85.0",
+    "@earendil-works/pi-coding-agent": "^0.85.0"
   },
   "overrides": {
     "read-yaml-file": "2.1.0"
@@ -68,15 +69,15 @@
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",
     "@changesets/cli": "2.31.1",
-    "@earendil-works/pi-agent-core": "0.84.2",
-    "@earendil-works/pi-ai": "0.84.2",
-    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-agent-core": "0.85.1",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-coding-agent": "0.85.1",
     "@eslint/js": "10.0.1",
     "eslint": "10.8.0",
     "globals": "^16.1.0",
     "typebox": "1.3.7",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.1",
-    "vitest": "3.2.7"
+    "vitest": "5.0.1"
   }
 }

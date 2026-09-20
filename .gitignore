@@ -10,3 +10,4 @@ dist/
 experiments/
 .pi/
 .pi-subagents/
+.vitest/

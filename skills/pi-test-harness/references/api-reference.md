@@ -1,6 +1,6 @@
 # API reference
 
-Type definitions and the event-collection API for `@abdwhb-png/pi-test-harness` v0.7.0 (Pi 0.84.x). Use this as a reference when authoring assertions or tracing through snippets.
+Type definitions and the event-collection API for `@abdwhb-png/pi-test-harness` v0.7.0 (Pi 0.85.x). Use this as a reference when authoring assertions or tracing through snippets.
 
 ## Table of contents
 
@@ -79,7 +79,7 @@ function createTestSession(options?: TestSessionOptions): Promise<TestSession>;
 
 | Option               | Type                              | Default       | Notes                                               |
 | -------------------- | --------------------------------- | ------------- | --------------------------------------------------- |
-| `extensions`         | `string[]`                        | `[]`          | Extension file paths to load (via real jiti)        |
+| `extensions`         | `string[]`                        | `[]`          | Extension file paths to load (via real jiti, in Pi's shipped loader configuration) |
 | `extensionFactories` | `Function[]`                      | `[]`          | Inline extension factory functions (no file needed) |
 | `cwd`                | `string`                          | auto temp dir | Working directory (auto-cleanup on `dispose()`)     |
 | `systemPrompt`       | `string`                          | (default)     | Override the system prompt                          |
