@@ -26,6 +26,7 @@ import { interceptToolExecution } from "./mock-tools.js";
 import { createMockUIContext } from "./mock-ui.js";
 import { createEventCollector } from "./events.js";
 import { formatPlaybookDiagnostic } from "./diagnostics.js";
+import { withoutJitiNativeImport } from "./pi-loader-parity.js";
 import type {
 	TestSessionOptions,
 	TestSession,
@@ -57,7 +58,9 @@ export async function createTestSession(
 			? () => options.systemPrompt!
 			: undefined,
 	});
-	await loader.reload();
+	// Extensions load here. Pinned to the loader configuration Pi's shipped
+	// runtimes use — see withoutJitiNativeImport for why that matters.
+	await withoutJitiNativeImport(() => loader.reload());
 
 	// Create isolated ModelRuntime with auth under cwd and no persisted model catalog
 	const modelRuntime = await ModelRuntime.create({
@@ -80,15 +83,17 @@ export async function createTestSession(
 	// Pi 0.84 synchronizes runtime credentials with an offline model refresh.
 	await modelRuntime.setRuntimeApiKey("openai", "sk-test-harness-dummy");
 
-	const { session, extensionsResult } = await createAgentSession({
-		cwd,
-		agentDir: cwd,
-		model: playbookModel,
-		modelRuntime,
-		sessionManager: SessionManager.inMemory(),
-		settingsManager,
-		resourceLoader: loader,
-	});
+	const { session, extensionsResult } = await withoutJitiNativeImport(() =>
+		createAgentSession({
+			cwd,
+			agentDir: cwd,
+			model: playbookModel,
+			modelRuntime,
+			sessionManager: SessionManager.inMemory(),
+			settingsManager,
+			resourceLoader: loader,
+		}),
+	);
 
 	if (extensionsResult.errors.length > 0) {
 		session.dispose();
@@ -131,10 +136,7 @@ export async function createTestSession(
 			if (event.isError) {
 				const lastCall = events.toolCalls[events.toolCalls.length - 1];
 				if (lastCall && lastCall.toolName === event.toolName) {
-					if (
-						resultText.includes("blocked") ||
-						resultText.includes("Plan mode")
-					) {
+					if (resultText.includes("blocked") || resultText.includes("Plan mode")) {
 						lastCall.blocked = true;
 						lastCall.blockReason = resultText;
 					}
@@ -221,11 +223,7 @@ export async function createTestSession(
 			if (state.remaining > 0) {
 				const allActions = turns.flatMap((t) => t.actions);
 				const remaining = allActions.slice(state.consumed);
-				const diagnostic = formatPlaybookDiagnostic(
-					"remaining",
-					state,
-					remaining,
-				);
+				const diagnostic = formatPlaybookDiagnostic("remaining", state, remaining);
 				throw new Error(diagnostic);
 			}
 		},

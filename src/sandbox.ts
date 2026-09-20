@@ -16,6 +16,7 @@ import {
 	DefaultResourceLoader,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { withoutJitiNativeImport } from "./pi-loader-parity.js";
 import type { SandboxOptions, SandboxResult } from "./types.js";
 import { createTestSession } from "./session.js";
 
@@ -49,6 +50,52 @@ function run(args: string[], cwd: string, label: string): string {
 	}
 }
 
+/** Manifest fields the sandbox install path needs. */
+interface PackageManifest {
+	name?: string;
+	pi?: {
+		extensions?: string[];
+	};
+}
+
+/**
+ * Read a package.json, reporting the offending path instead of surfacing a bare
+ * SyntaxError. A malformed manifest is fatal for both call sites below, so the
+ * failure is rethrown with the path that caused it.
+ */
+function readPackageJson(filePath: string): PackageManifest {
+	let raw: string;
+	try {
+		raw = fs.readFileSync(filePath, "utf-8");
+	} catch (err) {
+		throw new Error(
+			`Could not read ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+			{ cause: err },
+		);
+	}
+	try {
+		return JSON.parse(raw) as PackageManifest;
+	} catch (err) {
+		throw new Error(
+			`Invalid JSON in ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+			{ cause: err },
+		);
+	}
+}
+
+/**
+ * Read the package name from a package.json, decoded here rather than at the
+ * call site: every consumer of this value needs it to be a non-empty string.
+ */
+function readPackageName(filePath: string): string {
+	const manifest = readPackageJson(filePath);
+	const name = manifest.name;
+	if (typeof name !== "string" || name.length === 0) {
+		throw new Error(`package.json at ${filePath} has no "name" field`);
+	}
+	return name;
+}
+
 export async function verifySandboxInstall(
 	options: SandboxOptions,
 ): Promise<SandboxResult> {
@@ -60,8 +107,7 @@ export async function verifySandboxInstall(
 	if (!fs.existsSync(pkgJsonPath)) {
 		throw new Error(`No package.json found at ${pkgJsonPath}`);
 	}
-	const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
-	const pkgName = pkgJson.name;
+	const pkgName = readPackageName(pkgJsonPath);
 
 	// Create sandbox temp dir
 	const sandboxDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-sandbox-"));
@@ -105,11 +151,7 @@ export async function verifySandboxInstall(
 		);
 
 		// 3. npm install
-		const installArgs = [
-			...npmCmd.slice(1),
-			"install",
-			"--ignore-scripts=false",
-		];
+		const installArgs = [...npmCmd.slice(1), "install", "--ignore-scripts=false"];
 		run(
 			[...npmCmd.slice(0, 1), ...installArgs],
 			sandboxDir,
@@ -128,8 +170,8 @@ export async function verifySandboxInstall(
 		}
 
 		// Read installed package.json for pi manifest
-		const installedPkgJson = JSON.parse(
-			fs.readFileSync(path.join(installedPkgDir, "package.json"), "utf-8"),
+		const installedPkgJson = readPackageJson(
+			path.join(installedPkgDir, "package.json"),
 		);
 		const piManifest = installedPkgJson.pi;
 
@@ -161,7 +203,9 @@ export async function verifySandboxInstall(
 			settingsManager,
 			additionalExtensionPaths: extensionPaths,
 		});
-		await loader.reload();
+		// Extension modules evaluate here; keep the loader configuration in parity
+		// with Pi's shipped runtimes (see withoutJitiNativeImport).
+		await withoutJitiNativeImport(() => loader.reload());
 
 		const extensionsResult = loader.getExtensions();
 		const skillsResult = loader.getSkills();
