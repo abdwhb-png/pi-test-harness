@@ -1,7 +1,7 @@
 /**
- * Pi 0.84 compatibility tests.
+ * Pi 0.85 compatibility tests.
  *
- * These tests verify that the harness works correctly with Pi 0.84 APIs:
+ * These tests verify that the harness works correctly with Pi 0.85 APIs:
  *   - ModelRuntime isolation (no credentials, no ~/.pi touch)
  *   - Public Agent APIs (streamFunction, state.tools, waitForIdle)
  *   - AgentSession hooks (beforeToolCall / afterToolCall installed by AgentSession)
@@ -19,9 +19,9 @@ import {
 	type TestSession,
 } from "../src/index.js";
 
-describe("Pi 0.84 compat — isolated session", () => {
+describe("Pi 0.85 compat — isolated session", () => {
 	it("dummy runtime API key synchronization stays offline", async () => {
-		// Pi 0.84 owns the offline credential synchronization policy. The
+		// Pi 0.85 owns the offline credential synchronization policy. The
 		// harness must not pass the removed allowNetwork option, and session
 		// initialization must not attempt a network request.
 		type RefreshOptions = Parameters<
@@ -97,7 +97,7 @@ describe("Pi 0.84 compat — isolated session", () => {
 	});
 });
 
-describe("Pi 0.84 compat — hook pipeline", () => {
+describe("Pi 0.85 compat — hook pipeline", () => {
 	let t: TestSession;
 
 	afterEach(() => t?.dispose());
@@ -227,7 +227,7 @@ describe("Pi 0.84 compat — hook pipeline", () => {
 	});
 });
 
-describe("Pi 0.84 compat — ExtensionUIContext", () => {
+describe("Pi 0.85 compat — ExtensionUIContext", () => {
 	let t: TestSession;
 
 	afterEach(() => t?.dispose());
