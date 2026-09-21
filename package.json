@@ -1,6 +1,6 @@
 {
   "name": "@abdwhb-png/pi-test-harness",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Test harness for pi extensions — in-process session testing, package install verification, and subprocess mocking",
   "author": "Abdullah Alblushi (fork)",
   "license": "MIT",
