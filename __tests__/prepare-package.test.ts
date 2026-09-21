@@ -267,7 +267,11 @@ describe("packageTarball", () => {
 		// Tarball contains only the package files (no source, no node_modules)
 		const listing = execFileSync("tar", ["-tf", tarballPath], {
 			encoding: "utf8",
-		}).split("\n").filter(Boolean);
+			// bsdtar on Windows terminates every line with CRLF; a bare split("\n")
+			// leaves a trailing \r on each entry and fails every toContain below.
+		})
+			.split(/\r?\n/)
+			.filter(Boolean);
 
 		// package/ prefix per npm tarball convention
 		expect(listing).toContain("package/index.js");

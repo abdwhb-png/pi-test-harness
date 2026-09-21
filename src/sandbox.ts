@@ -27,13 +27,59 @@ function resolveNpmCommand(npmCommand?: string[]): string[] {
 }
 
 /**
+ * Resolve `command` to something execFileSync can actually start.
+ *
+ * **Why this exists**: on Windows a bare `sfw` (or `npm`) is the `.cmd` shim, and
+ * child_process applies no PATHEXT when creating the process, so spawning it
+ * fails with ENOENT — which broke the documented `npmCommand: ["sfw", "npm"]`
+ * preset on the Windows integration matrix. Candidate extensions come from
+ * PATHEXT (or the usual Windows default) and are matched against PATH in the
+ * same order the platform itself would. An unmatched command is returned
+ * unchanged, so a genuinely missing executable still raises a clear ENOENT.
+ *
+ * Exported for unit testing — not part of the public API contract.
+ * @internal
+ */
+export function _resolveExecutable(
+	command: string,
+	platform: NodeJS.Platform = process.platform,
+	env: NodeJS.ProcessEnv = process.env,
+): string {
+	if (platform !== "win32") return command;
+	if (path.extname(command) !== "") return command;
+
+	const extensions = (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+		.split(";")
+		.filter(Boolean);
+
+	// An explicit path never goes through PATH resolution — only PATHEXT applies.
+	if (command.includes("/") || command.includes("\\")) {
+		for (const extension of extensions) {
+			const candidate = `${command}${extension}`;
+			if (fs.existsSync(candidate)) return candidate;
+		}
+		return command;
+	}
+
+	const directories = (env.PATH ?? "").split(path.delimiter).filter(Boolean);
+	for (const directory of directories) {
+		for (const extension of extensions) {
+			const candidate = path.join(directory, `${command}${extension}`);
+			if (fs.existsSync(candidate)) return candidate;
+		}
+	}
+
+	return command;
+}
+
+/**
  * Run a command via execFileSync with safe string conversion for the full
  * command line in the error message.
  */
 function run(args: string[], cwd: string, label: string): string {
 	const [cmd, ...cmdArgs] = args;
 	try {
-		return execFileSync(cmd, cmdArgs, {
+		return execFileSync(_resolveExecutable(cmd), cmdArgs, {
 			cwd,
 			encoding: "utf-8",
 			stdio: ["pipe", "pipe", "pipe"],
