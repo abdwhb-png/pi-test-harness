@@ -49,6 +49,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node -e \"require('fs').copyFileSync('src/mock-pi-script.mjs','dist/mock-pi-script.mjs')\" && node scripts/prepare-package.mjs",
     "prepublishOnly": "npm run build",
+    "release": "changeset publish",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

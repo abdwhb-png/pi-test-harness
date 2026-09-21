@@ -28,6 +28,21 @@ The repository and published package include the canonical `pi-test-harness` ski
 - `@earendil-works/pi-ai` ^0.85.0
 - `@earendil-works/pi-agent-core` ^0.85.0
 
+### Supported Pi line
+
+The harness version and the Pi version are independent tracks — do not compare them numerically. Which Pi line a harness release supports is declared in `peerDependencies` above; the table records it per release.
+
+| Harness | Supported Pi | Notes                                                    |
+| ------- | ------------ | -------------------------------------------------------- |
+| 0.8.x   | 0.85.x       | Loader parity for top-level-await entrypoints            |
+| 0.7.x   | 0.84.x       | Pi 0.84 support                                          |
+
+### Ways to install it
+
+1. **From npm (normal case):** `npm install --save-dev @abdwhb-png/pi-test-harness@0.8.0`. This is the packed artifact a stranger receives.
+2. **Pre-release:** changes that need testing before a final version are published under the `next` dist-tag, so `npm install --save-dev @abdwhb-png/pi-test-harness@next` picks one up without inventing a `0.x` release.
+3. **Local checkout (harness development):** `bun link` in the harness repo, then `bun link @abdwhb-png/pi-test-harness` in the consumer, or point the dependency at a `file:` path. Consumers read `dist/`, so run `npm run build` after editing `src/`, and never commit a lockfile that resolves to the link.
+
 ## Quick Start
 
 ```typescript
@@ -635,6 +650,19 @@ Known intentional gaps:
 - No compatibility testing for the deprecated `@mariozechner/*` Pi packages or Pi <0.85.0.
 - Concurrent/parallel tool execution is not yet deeply exercised. Today the playbook emits one tool call per assistant message, which is deterministic and good for most extension tests. To test true Pi parallelism, the harness should grow a grouped/batched call action that emits multiple `toolCall` blocks in one assistant message, then assert result collection by `toolCallId` rather than completion order.
 - Edge cases still worth adding over time: command/input/before-agent hooks, tool-result hook mutation, multiple extensions interacting, install failure modes, malformed package metadata, ESM/CJS fixture packages, cleanup failure paths, and concurrent `createMockPi()` subprocess consumers.
+
+## Releasing
+
+Releases are driven by [changesets](https://github.com/changesets/changesets) and published from CI with npm Trusted Publishing (OIDC) — the repository holds no `NPM_TOKEN`.
+
+1. Add a changeset for the change (`npx changeset`) and merge it alongside the work.
+2. Run the **Release** workflow (`workflow_dispatch`) on `main` — the base branch changesets reads. With pending changesets it opens a `chore: version packages` PR carrying the version bump and the changelog.
+3. Merge that PR, then run the workflow again: nothing is left to version, so it publishes to npm, creates the `v<version>` tag, and creates the GitHub Release from that version's changelog entry.
+4. changesets additionally tags `<pkg>@<version>`; the human-facing ref is `v<version>`.
+
+One-time prerequisite: on npmjs.com, the package's trusted publisher must name this repository and the `release` workflow. A local `npm publish` still works as a manual escape hatch, but it carries no provenance.
+
+Consumer-side this changes nothing: install the published version, or keep a `file:`/linked dependency while developing the harness itself (see [Ways to install it](#ways-to-install-it)).
 
 ## Upstream
 

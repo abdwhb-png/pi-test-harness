@@ -1,5 +1,5 @@
 ---
-"@abdwhb-png/pi-test-harness": patch
+"@abdwhb-png/pi-test-harness": minor
 ---
 
 Load extensions in Pi's shipped loader configuration, and move the supported Pi line to 0.85.
