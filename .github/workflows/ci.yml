@@ -13,6 +13,11 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Skip sfw's periodic update check: it makes the same unauthenticated GitHub
+  # API call that the bootstrap step below retries.
+  SFW_SKIP_UPDATE_CHECK: "1"
+
 jobs:
   verify:
     name: Lint, typecheck, unit, build, audit, consumer
@@ -24,7 +29,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm install -g sfw@2.0.6
-      - run: sfw --version
+      - name: Verify Socket Firewall
+        run: bash scripts/verify-sfw.sh
       - run: sfw npm ci
       - run: npm run lint
       - run: npm run typecheck
@@ -47,7 +53,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm install -g sfw@2.0.6
-      - run: sfw --version
+      - name: Verify Socket Firewall
+        run: bash scripts/verify-sfw.sh
       - run: sfw npm ci
       # Bun enables jiti's native import fast-path, so this is the only runner
       # that catches a top-level-await entrypoint regression.
@@ -69,7 +76,8 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm install -g sfw@2.0.6
-      - run: sfw --version
+      - name: Verify Socket Firewall
+        run: bash scripts/verify-sfw.sh
       - run: sfw npm ci
       - run: npm run build
       - run: npm run test:integration

@@ -121,8 +121,32 @@ export function verifyNoSymlinks(packageDir) {
 }
 
 /**
+ * How to invoke npm from a child process, portably.
+ *
+ * **Why not just `execFileSync("npm", ...)`**: on Windows npm is the `npm.cmd`
+ * shim, and child_process does not apply PATHEXT when creating a process, so the
+ * spawn fails with `ENOENT` — which is what broke the Windows integration job at
+ * the tarball step. Running npm's own CLI script under the Node binary that is
+ * already executing this script works on every platform, needs no shell, and
+ * guarantees the same npm that started the run. The fallback covers a direct
+ * `node scripts/prepare-package.mjs`, where npm exports no `npm_execpath`.
+ */
+function npmInvocation() {
+	const execPath = process.env.npm_execpath;
+	if (execPath && /\.(c|m)?js$/.test(execPath)) {
+		return { command: process.execPath, args: [execPath], shell: false };
+	}
+	// A `.cmd` shim cannot be executed without a shell on Windows.
+	if (process.platform === "win32") {
+		return { command: "npm.cmd", args: [], shell: true };
+	}
+	return { command: "npm", args: [], shell: false };
+}
+
+/**
  * Create a tarball at dist/package.tgz from the prepared dist/package/ directory.
- * Uses npm pack with execFileSync (no shell interpolation) for deterministic output.
+ * Uses npm pack via {@link npmInvocation} (no shell interpolation) so the output
+ * is deterministic and the call works on Windows.
  * Returns the path to the tarball.
  */
 export function packageTarball(rootDir) {
@@ -136,10 +160,11 @@ export function packageTarball(rootDir) {
 
 	// npm pack from dist/package/ (which has its own minimal package.json)
 	// --pack-destination outputs to dist/; the filename is scoped-package-version.tgz
+	const npm = npmInvocation();
 	const result = execFileSync(
-		"npm",
-		["pack", "--pack-destination", distDir, "--quiet"],
-		{ cwd: packageDir, encoding: "utf8" },
+		npm.command,
+		[...npm.args, "pack", "--pack-destination", distDir, "--quiet"],
+		{ cwd: packageDir, encoding: "utf8", shell: npm.shell },
 	).trim();
 
 	// result is the filename npm wrote (e.g. abdwhb-png-pi-test-harness-0.7.0.tgz)
@@ -165,6 +190,28 @@ export function packageTarball(rootDir) {
  * Run the full prepare-package workflow.
  * Returns the generated package.json so callers can inspect it.
  */
+/**
+ * Read and parse a JSON file, naming the file in the failure rather than
+ * surfacing a bare SyntaxError from somewhere inside this pipeline.
+ */
+function readJsonFile(filePath) {
+	let raw;
+	try {
+		raw = readFileSync(filePath, "utf-8");
+	} catch (err) {
+		throw new Error(`Could not read ${filePath}: ${err.message}`, {
+			cause: err,
+		});
+	}
+	try {
+		return JSON.parse(raw);
+	} catch (err) {
+		throw new Error(`Invalid JSON in ${filePath}: ${err.message}`, {
+			cause: err,
+		});
+	}
+}
+
 export function preparePackage(rootDir) {
 	const distDir = join(rootDir, "dist");
 	const packageDir = join(distDir, "package");
@@ -184,9 +231,7 @@ export function preparePackage(rootDir) {
 	}
 
 	// 2. Write minimal package.json
-	const rootPkg = JSON.parse(
-		readFileSync(join(rootDir, "package.json"), "utf-8"),
-	);
+	const rootPkg = readJsonFile(join(rootDir, "package.json"));
 	const pkg = generatePackageJson(rootPkg);
 	const pkgJsonPath = join(packageDir, "package.json");
 	writeFileSync(pkgJsonPath, JSON.stringify(pkg, null, 2) + "\n");
