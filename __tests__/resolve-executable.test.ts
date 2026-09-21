@@ -1,12 +1,14 @@
 /**
- * Unit tests for the Windows executable resolution used by `verifySandboxInstall`.
+ * Unit tests for how the sandbox launches external commands.
  *
- * **Why injectable**: the resolver only matters on win32, which no Linux CI runner
- * can exercise. Taking the platform and environment as parameters makes both
- * branches provable here instead of assumed from the platform's behaviour.
+ * **Why injectable**: both the resolution and the shell decision only matter on
+ * win32, which no Linux CI runner can exercise. Taking the platform (and
+ * environment) as parameters makes both branches provable here instead of
+ * assumed from the platform's behaviour.
  *
  * The contract under guard: an extensionless command (`sfw`, `npm`) resolves to
- * its PATHEXT shim on Windows, and an unmatched command is returned unchanged so
+ * its PATHEXT shim on Windows and is launched through a shell because `.cmd` is
+ * not an executable image; an unmatched command is returned unchanged so
  * `verifySandboxInstall({ npmCommand: ["nope"] })` still raises ENOENT.
  */
 
@@ -14,7 +16,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { _resolveExecutable } from "../src/sandbox.js";
+import { _requiresShell, _resolveExecutable } from "../src/sandbox.js";
 
 const tempDirs: string[] = [];
 
@@ -123,5 +125,26 @@ describe("_resolveExecutable", () => {
 		expect(
 			_resolveExecutable(command, "win32", { PATH: "", PATHEXT: ".cmd" }),
 		).toBe(command);
+	});
+});
+
+describe("_requiresShell", () => {
+	it("requires a shell for a Windows .cmd shim", () => {
+		expect(_requiresShell("C:\\npm\\prefix\\sfw.CMD", "win32")).toBe(true);
+	});
+
+	it("requires a shell for .cmd and .bat regardless of case", () => {
+		expect(_requiresShell("C:\\tools\\thing.cmd", "win32")).toBe(true);
+		expect(_requiresShell("C:\\tools\\thing.BAT", "win32")).toBe(true);
+	});
+
+	it("does not require a shell for a real binary", () => {
+		expect(_requiresShell("C:\\tools\\thing.exe", "win32")).toBe(false);
+		expect(_requiresShell("C:\\tools\\thing", "win32")).toBe(false);
+	});
+
+	it("never requires a shell off Windows", () => {
+		expect(_requiresShell("/usr/bin/sfw.cmd", "linux")).toBe(false);
+		expect(_requiresShell("/usr/bin/sfw.cmd", "darwin")).toBe(false);
 	});
 });

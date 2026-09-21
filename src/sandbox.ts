@@ -73,16 +73,43 @@ export function _resolveExecutable(
 }
 
 /**
+ * Whether `execFileSync` needs a shell to launch the resolved command.
+ *
+ * **Why**: on Windows a `.cmd`/`.bat` is not an executable image — it needs a
+ * terminal. Since the CVE-2024-27980 fix, child_process refuses to launch one
+ * with `shell: false` and fails with `EINVAL`, so resolving `sfw` to `sfw.CMD`
+ * was necessary but not sufficient. Real binaries (`.exe`, or a resolved path
+ * with no shim extension) still spawn directly, which stays shell-free.
+ *
+ * Trade-off accepted here: with `shell: true` the arguments go through cmd.exe.
+ * Node deprecated passing an argument list that way (DEP0190, v22.15/v23.11) and
+ * does not quote arguments for you, so a path containing spaces has to survive
+ * cmd's own parsing.
+ *
+ * Exported for unit testing — not part of the public API contract.
+ * @internal
+ */
+export function _requiresShell(
+	resolved: string,
+	platform: NodeJS.Platform = process.platform,
+): boolean {
+	return platform === "win32" && /\.(cmd|bat)$/i.test(resolved);
+}
+
+/**
  * Run a command via execFileSync with safe string conversion for the full
  * command line in the error message.
  */
 function run(args: string[], cwd: string, label: string): string {
 	const [cmd, ...cmdArgs] = args;
+	const resolved = _resolveExecutable(cmd);
 	try {
-		return execFileSync(_resolveExecutable(cmd), cmdArgs, {
+		return execFileSync(resolved, cmdArgs, {
 			cwd,
 			encoding: "utf-8",
 			stdio: ["pipe", "pipe", "pipe"],
+			// `.cmd`/`.bat` shims (npm, sfw) need a terminal on Windows.
+			shell: _requiresShell(resolved),
 		}).trim();
 	} catch (err: any) {
 		// Enhance the error message with context
