@@ -14,8 +14,9 @@ permissions:
   contents: read
 
 env:
-  # Skip sfw's periodic update check: it makes the same unauthenticated GitHub
-  # API call that the bootstrap step below retries.
+  # Skip sfw's periodic update check: it is the same unauthenticated GitHub API
+  # call that makes a cold bootstrap fail. With a warm binary cache (see the
+  # cache step in each job) the bootstrap makes no network call at all.
   SFW_SKIP_UPDATE_CHECK: "1"
 
 jobs:
@@ -28,7 +29,27 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm install -g sfw@2.0.6
+      # Install into the workspace so sfw's binary cache lands inside it, where
+      # actions/cache can persist it — there is no ~/.sfw-cache to cache.
+      - name: Install Socket Firewall
+        run: |
+          npm install -g sfw@2.0.6 \
+            --prefix "${{ github.workspace }}/.sfw-tools"
+      - name: Put Socket Firewall on PATH
+        run: |
+          # npm shims live in bin/ on POSIX, in the prefix root on Windows.
+          echo "${{ github.workspace }}/.sfw-tools/bin" >> "$GITHUB_PATH"
+          echo "${{ github.workspace }}/.sfw-tools" >> "$GITHUB_PATH"
+      # Ordered after the install so a restore cannot be wiped by it; the single
+      # documented cache step saves in its post-step. A warm cache is what stops
+      # sfw needing the network at all.
+      - name: Cache Socket Firewall binary
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            .sfw-tools/lib/node_modules/sfw/.sfw-cache
+            .sfw-tools/node_modules/sfw/.sfw-cache
+          key: sfw-${{ runner.os }}-${{ runner.arch }}-2.0.6
       - name: Verify Socket Firewall
         run: bash scripts/verify-sfw.sh
       - run: sfw npm ci
@@ -52,7 +73,27 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm install -g sfw@2.0.6
+      # Install into the workspace so sfw's binary cache lands inside it, where
+      # actions/cache can persist it — there is no ~/.sfw-cache to cache.
+      - name: Install Socket Firewall
+        run: |
+          npm install -g sfw@2.0.6 \
+            --prefix "${{ github.workspace }}/.sfw-tools"
+      - name: Put Socket Firewall on PATH
+        run: |
+          # npm shims live in bin/ on POSIX, in the prefix root on Windows.
+          echo "${{ github.workspace }}/.sfw-tools/bin" >> "$GITHUB_PATH"
+          echo "${{ github.workspace }}/.sfw-tools" >> "$GITHUB_PATH"
+      # Ordered after the install so a restore cannot be wiped by it; the single
+      # documented cache step saves in its post-step. A warm cache is what stops
+      # sfw needing the network at all.
+      - name: Cache Socket Firewall binary
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            .sfw-tools/lib/node_modules/sfw/.sfw-cache
+            .sfw-tools/node_modules/sfw/.sfw-cache
+          key: sfw-${{ runner.os }}-${{ runner.arch }}-2.0.6
       - name: Verify Socket Firewall
         run: bash scripts/verify-sfw.sh
       - run: sfw npm ci
@@ -75,7 +116,27 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm install -g sfw@2.0.6
+      # Install into the workspace so sfw's binary cache lands inside it, where
+      # actions/cache can persist it — there is no ~/.sfw-cache to cache.
+      - name: Install Socket Firewall
+        run: |
+          npm install -g sfw@2.0.6 \
+            --prefix "${{ github.workspace }}/.sfw-tools"
+      - name: Put Socket Firewall on PATH
+        run: |
+          # npm shims live in bin/ on POSIX, in the prefix root on Windows.
+          echo "${{ github.workspace }}/.sfw-tools/bin" >> "$GITHUB_PATH"
+          echo "${{ github.workspace }}/.sfw-tools" >> "$GITHUB_PATH"
+      # Ordered after the install so a restore cannot be wiped by it; the single
+      # documented cache step saves in its post-step. A warm cache is what stops
+      # sfw needing the network at all.
+      - name: Cache Socket Firewall binary
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            .sfw-tools/lib/node_modules/sfw/.sfw-cache
+            .sfw-tools/node_modules/sfw/.sfw-cache
+          key: sfw-${{ runner.os }}-${{ runner.arch }}-2.0.6
       - name: Verify Socket Firewall
         run: bash scripts/verify-sfw.sh
       - run: sfw npm ci

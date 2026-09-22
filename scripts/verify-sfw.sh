@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 # Bootstrap Socket Firewall and prove it works before any `sfw npm ...` step.
 #
-# **Why the retries**: on first use sfw resolves its own release through the
-# *unauthenticated* GitHub API and caches the binary under ~/.sfw-cache. GitHub
-# Actions runners share IPs, so that call is periodically rate-limited and sfw
-# exits with:
+# **Why the retries**: on a cold cache sfw must resolve its own release through
+# the *unauthenticated* GitHub API before it can do anything, and any failure
+# there is fatal:
 #
 #   [sfw] Failed to prepare firewall binary: Unable to fetch latest release and
 #   no valid cached release found.
 #
-# That is a transient infrastructure failure with nothing to do with this
-# repository. Retrying is safe — the download is idempotent and cached — and the
-# job still fails loudly if every attempt fails, so a real outage cannot pass
+# GitHub Actions runners share IPs, so that call hits a per-hour quota. Retrying
+# therefore only covers a cold start that lands on a throttled runner; it cannot
+# outlast the quota. The durable fix is the cache in ci.yml: sfw keeps its binary
+# in `.sfw-cache` *inside its own install directory* (not `~/.sfw-cache`), so
+# ci.yml installs it into the workspace and caches that path. With a warm cache
+# and SFW_SKIP_UPDATE_CHECK set, sfw makes no network call at all.
+#
+# Retrying stays as cold-start insurance: the download is idempotent, and the job
+# still fails loudly if every attempt fails, so a real outage cannot pass
 # silently.
 set -euo pipefail
 
