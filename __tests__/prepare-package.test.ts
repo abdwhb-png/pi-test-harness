@@ -40,7 +40,10 @@ afterEach(() => {
 	rmSync(fixtureDir, { recursive: true, force: true });
 });
 
-function createMockRootPackage(distFiles: string[], rootPkg?: Record<string, unknown>) {
+function createMockRootPackage(
+	distFiles: string[],
+	rootPkg?: Record<string, unknown>,
+) {
 	// Write root package.json
 	const pkg = {
 		name: "@test/test-package",
@@ -285,9 +288,13 @@ describe("packageTarball", () => {
 		expect(listing).toContain("package/skills/pi-test-harness/evals/evals.json");
 
 		// No source files or node_modules leaked
-		expect(listing.some((f) => f.endsWith(".ts") && !f.endsWith(".d.ts"))).toBe(false);
+		expect(listing.some((f) => f.endsWith(".ts") && !f.endsWith(".d.ts"))).toBe(
+			false,
+		);
 		expect(listing.some((f) => f.includes("node_modules"))).toBe(false);
-		expect(listing.some((f) => f.includes("CHANGELOG.md") || f.includes("README.md"))).toBe(false);
+		expect(
+			listing.some((f) => f.includes("CHANGELOG.md") || f.includes("README.md")),
+		).toBe(false);
 	});
 
 	it("packed package.json has peerDependencies but no scripts or devDependencies", () => {
@@ -322,9 +329,7 @@ describe("packageTarball", () => {
 
 	it("throws when dist/package does not exist", () => {
 		createMockRootPackage(["index.js"]);
-		expect(() => packageTarball(fixtureDir)).toThrow(
-			"dist/package/ not found",
-		);
+		expect(() => packageTarball(fixtureDir)).toThrow("dist/package/ not found");
 	});
 });
 
