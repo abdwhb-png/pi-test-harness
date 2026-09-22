@@ -31,15 +31,23 @@ jobs:
           cache: npm
       # Install into the workspace so sfw's binary cache lands inside it, where
       # actions/cache can persist it — there is no ~/.sfw-cache to cache.
+      # `shell: bash` on both steps: windows-latest defaults to pwsh, where
+      # `$GITHUB_PATH` is `$env:GITHUB_PATH`. GitHub documents Git-for-Windows
+      # bash for this. Each `run` stays on one line on purpose: a backslash
+      # continuation is a bash-ism, and this workflow also runs on Windows.
       - name: Install Socket Firewall
-        run: |
-          npm install -g sfw@2.0.6 \
-            --prefix "${{ github.workspace }}/.sfw-tools"
+        shell: bash
+        env:
+          SFW_PREFIX: ${{ github.workspace }}/.sfw-tools
+        run: npm install -g sfw@2.0.6 --prefix "$SFW_PREFIX"
       - name: Put Socket Firewall on PATH
+        shell: bash
+        env:
+          SFW_PREFIX: ${{ github.workspace }}/.sfw-tools
         run: |
           # npm shims live in bin/ on POSIX, in the prefix root on Windows.
-          echo "${{ github.workspace }}/.sfw-tools/bin" >> "$GITHUB_PATH"
-          echo "${{ github.workspace }}/.sfw-tools" >> "$GITHUB_PATH"
+          echo "$SFW_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "$SFW_PREFIX" >> "$GITHUB_PATH"
       # Ordered after the install so a restore cannot be wiped by it; the single
       # documented cache step saves in its post-step. A warm cache is what stops
       # sfw needing the network at all.
@@ -75,15 +83,23 @@ jobs:
           cache: npm
       # Install into the workspace so sfw's binary cache lands inside it, where
       # actions/cache can persist it — there is no ~/.sfw-cache to cache.
+      # `shell: bash` on both steps: windows-latest defaults to pwsh, where
+      # `$GITHUB_PATH` is `$env:GITHUB_PATH`. GitHub documents Git-for-Windows
+      # bash for this. Each `run` stays on one line on purpose: a backslash
+      # continuation is a bash-ism, and this workflow also runs on Windows.
       - name: Install Socket Firewall
-        run: |
-          npm install -g sfw@2.0.6 \
-            --prefix "${{ github.workspace }}/.sfw-tools"
+        shell: bash
+        env:
+          SFW_PREFIX: ${{ github.workspace }}/.sfw-tools
+        run: npm install -g sfw@2.0.6 --prefix "$SFW_PREFIX"
       - name: Put Socket Firewall on PATH
+        shell: bash
+        env:
+          SFW_PREFIX: ${{ github.workspace }}/.sfw-tools
         run: |
           # npm shims live in bin/ on POSIX, in the prefix root on Windows.
-          echo "${{ github.workspace }}/.sfw-tools/bin" >> "$GITHUB_PATH"
-          echo "${{ github.workspace }}/.sfw-tools" >> "$GITHUB_PATH"
+          echo "$SFW_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "$SFW_PREFIX" >> "$GITHUB_PATH"
       # Ordered after the install so a restore cannot be wiped by it; the single
       # documented cache step saves in its post-step. A warm cache is what stops
       # sfw needing the network at all.
@@ -118,15 +134,23 @@ jobs:
           cache: npm
       # Install into the workspace so sfw's binary cache lands inside it, where
       # actions/cache can persist it — there is no ~/.sfw-cache to cache.
+      # `shell: bash` on both steps: windows-latest defaults to pwsh, where
+      # `$GITHUB_PATH` is `$env:GITHUB_PATH`. GitHub documents Git-for-Windows
+      # bash for this. Each `run` stays on one line on purpose: a backslash
+      # continuation is a bash-ism, and this workflow also runs on Windows.
       - name: Install Socket Firewall
-        run: |
-          npm install -g sfw@2.0.6 \
-            --prefix "${{ github.workspace }}/.sfw-tools"
+        shell: bash
+        env:
+          SFW_PREFIX: ${{ github.workspace }}/.sfw-tools
+        run: npm install -g sfw@2.0.6 --prefix "$SFW_PREFIX"
       - name: Put Socket Firewall on PATH
+        shell: bash
+        env:
+          SFW_PREFIX: ${{ github.workspace }}/.sfw-tools
         run: |
           # npm shims live in bin/ on POSIX, in the prefix root on Windows.
-          echo "${{ github.workspace }}/.sfw-tools/bin" >> "$GITHUB_PATH"
-          echo "${{ github.workspace }}/.sfw-tools" >> "$GITHUB_PATH"
+          echo "$SFW_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "$SFW_PREFIX" >> "$GITHUB_PATH"
       # Ordered after the install so a restore cannot be wiped by it; the single
       # documented cache step saves in its post-step. A warm cache is what stops
       # sfw needing the network at all.
