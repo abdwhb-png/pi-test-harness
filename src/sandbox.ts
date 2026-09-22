@@ -73,27 +73,46 @@ export function _resolveExecutable(
 }
 
 /**
- * Whether `execFileSync` needs a shell to launch the resolved command.
+ * How to launch a resolved command, without Node's deprecated shell form.
  *
  * **Why**: on Windows a `.cmd`/`.bat` is not an executable image — it needs a
  * terminal. Since the CVE-2024-27980 fix, child_process refuses to launch one
  * with `shell: false` and fails with `EINVAL`, so resolving `sfw` to `sfw.CMD`
- * was necessary but not sufficient. Real binaries (`.exe`, or a resolved path
- * with no shim extension) still spawn directly, which stays shell-free.
+ * was necessary but not sufficient.
  *
- * Trade-off accepted here: with `shell: true` the arguments go through cmd.exe.
- * Node deprecated passing an argument list that way (DEP0190, v22.15/v23.11) and
- * does not quote arguments for you, so a path containing spaces has to survive
- * cmd's own parsing.
+ * Node documents three ways to launch it: `exec()`, `{ shell: true }`, or
+ * spawning `cmd.exe` with the script as an argument. The shell option is
+ * deprecated as a *runtime* warning in Node 24 (DEP0190) because an argument
+ * array passed that way is only space-joined, never escaped. This takes the
+ * third route — what `exec()` does internally — so the argument array reaches the
+ * child intact and no deprecated form is used.
+ *
+ * Real binaries (`.exe`, or a path with no shim extension) spawn directly and
+ * stay shell-free on every platform.
+ *
+ * Known limitation, unchanged from the shell form: cmd.exe applies its own
+ * parsing to the arguments that follow the script, so an argument containing
+ * spaces has to survive it. Only the script path is guaranteed, because Node
+ * quotes an argument that contains spaces when it builds the command line.
  *
  * Exported for unit testing — not part of the public API contract.
  * @internal
  */
-export function _requiresShell(
+export function _spawnTarget(
 	resolved: string,
+	args: string[],
 	platform: NodeJS.Platform = process.platform,
-): boolean {
-	return platform === "win32" && /\.(cmd|bat)$/i.test(resolved);
+	env: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[] } {
+	if (platform !== "win32" || !/\.(cmd|bat)$/i.test(resolved)) {
+		return { command: resolved, args };
+	}
+
+	// `/d` skips AutoRun scripts, `/s` keeps cmd's parsing of the rest as-is.
+	return {
+		command: env.ComSpec ?? "cmd.exe",
+		args: ["/d", "/s", "/c", resolved, ...args],
+	};
 }
 
 /**
@@ -102,14 +121,12 @@ export function _requiresShell(
  */
 function run(args: string[], cwd: string, label: string): string {
 	const [cmd, ...cmdArgs] = args;
-	const resolved = _resolveExecutable(cmd);
+	const target = _spawnTarget(_resolveExecutable(cmd), cmdArgs);
 	try {
-		return execFileSync(resolved, cmdArgs, {
+		return execFileSync(target.command, target.args, {
 			cwd,
 			encoding: "utf-8",
 			stdio: ["pipe", "pipe", "pipe"],
-			// `.cmd`/`.bat` shims (npm, sfw) need a terminal on Windows.
-			shell: _requiresShell(resolved),
 		}).trim();
 	} catch (err: any) {
 		// Enhance the error message with context

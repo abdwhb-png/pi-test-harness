@@ -7,8 +7,8 @@
  * assumed from the platform's behaviour.
  *
  * The contract under guard: an extensionless command (`sfw`, `npm`) resolves to
- * its PATHEXT shim on Windows and is launched through a shell because `.cmd` is
- * not an executable image; an unmatched command is returned unchanged so
+ * its PATHEXT shim on Windows, that shim is launched through cmd.exe (a `.cmd`
+ * is not an executable image), and an unmatched command is returned unchanged so
  * `verifySandboxInstall({ npmCommand: ["nope"] })` still raises ENOENT.
  */
 
@@ -16,7 +16,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { _requiresShell, _resolveExecutable } from "../src/sandbox.js";
+import { _resolveExecutable, _spawnTarget } from "../src/sandbox.js";
 
 const tempDirs: string[] = [];
 
@@ -128,23 +128,49 @@ describe("_resolveExecutable", () => {
 	});
 });
 
-describe("_requiresShell", () => {
-	it("requires a shell for a Windows .cmd shim", () => {
-		expect(_requiresShell("C:\\npm\\prefix\\sfw.CMD", "win32")).toBe(true);
+describe("_spawnTarget", () => {
+	it("launches a Windows .cmd shim through cmd.exe with the script as an argument", () => {
+		expect(
+			_spawnTarget("C:\\npm\\prefix\\sfw.CMD", ["npm", "ci"], "win32", {
+				ComSpec: "C:\\Windows\\System32\\cmd.exe",
+			}),
+		).toEqual({
+			command: "C:\\Windows\\System32\\cmd.exe",
+			args: ["/d", "/s", "/c", "C:\\npm\\prefix\\sfw.CMD", "npm", "ci"],
+		});
 	});
 
-	it("requires a shell for .cmd and .bat regardless of case", () => {
-		expect(_requiresShell("C:\\tools\\thing.cmd", "win32")).toBe(true);
-		expect(_requiresShell("C:\\tools\\thing.BAT", "win32")).toBe(true);
+	it("treats .cmd and .bat alike, regardless of case", () => {
+		expect(
+			_spawnTarget("C:\\tools\\thing.BAT", [], "win32", { ComSpec: "cmd.exe" })
+				.command,
+		).toBe("cmd.exe");
 	});
 
-	it("does not require a shell for a real binary", () => {
-		expect(_requiresShell("C:\\tools\\thing.exe", "win32")).toBe(false);
-		expect(_requiresShell("C:\\tools\\thing", "win32")).toBe(false);
+	it("falls back to cmd.exe when the environment has no ComSpec", () => {
+		expect(_spawnTarget("C:\\tools\\thing.cmd", [], "win32", {}).command).toBe(
+			"cmd.exe",
+		);
 	});
 
-	it("never requires a shell off Windows", () => {
-		expect(_requiresShell("/usr/bin/sfw.cmd", "linux")).toBe(false);
-		expect(_requiresShell("/usr/bin/sfw.cmd", "darwin")).toBe(false);
+	it("spawns a real binary directly, keeping the argument array intact", () => {
+		expect(
+			_spawnTarget("C:\\tools\\thing.exe", ["pack", "--quiet"], "win32", {}),
+		).toEqual({ command: "C:\\tools\\thing.exe", args: ["pack", "--quiet"] });
+		expect(_spawnTarget("C:\\tools\\thing", [], "win32", {})).toEqual({
+			command: "C:\\tools\\thing",
+			args: [],
+		});
+	});
+
+	it("never routes through cmd.exe off Windows", () => {
+		expect(_spawnTarget("/usr/bin/sfw.cmd", ["npm", "ci"], "linux", {})).toEqual({
+			command: "/usr/bin/sfw.cmd",
+			args: ["npm", "ci"],
+		});
+		expect(_spawnTarget("/usr/bin/sfw", [], "darwin", {})).toEqual({
+			command: "/usr/bin/sfw",
+			args: [],
+		});
 	});
 });
