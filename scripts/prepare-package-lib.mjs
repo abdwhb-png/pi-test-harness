@@ -144,10 +144,26 @@ function npmInvocation() {
 }
 
 /**
+ * Names of the tarballs sitting directly in a directory.
+ */
+function listTarballs(dir) {
+	return new Set(
+		readdirSync(dir, { withFileTypes: true })
+			.filter((entry) => entry.isFile() && entry.name.endsWith(".tgz"))
+			.map((entry) => entry.name),
+	);
+}
+
+/**
  * Create a tarball at dist/package.tgz from the prepared dist/package/ directory.
- * Uses npm pack via {@link npmInvocation} (no shell interpolation) so the output
- * is deterministic and the call works on Windows.
- * Returns the path to the tarball.
+ * Uses npm pack via {@link npmInvocation} (no shell interpolation) so the call
+ * works on Windows. Returns the path to the tarball.
+ *
+ * Which file npm wrote is worked out by comparing the directory before and after,
+ * not by reading npm's stdout. `npm pack` prints the bare filename only while
+ * npm_config_json is unset, and npm exports its own config into the environment of
+ * the scripts it runs: changesets publishes with --json, so the pack nested inside
+ * `npm publish` printed a JSON document where a filename was expected.
  */
 export function packageTarball(rootDir) {
 	const distDir = join(rootDir, "dist");
@@ -158,24 +174,29 @@ export function packageTarball(rootDir) {
 		throw new Error("dist/package/ not found — run prepare-package first");
 	}
 
-	// npm pack from dist/package/ (which has its own minimal package.json)
-	// --pack-destination outputs to dist/; the filename is scoped-package-version.tgz
+	const before = listTarballs(distDir);
+
+	// npm pack from dist/package/ (which has its own minimal package.json), with
+	// --pack-destination putting the archive in dist/ under npm's own name.
 	const npm = npmInvocation();
-	const result = execFileSync(
+	execFileSync(
 		npm.command,
 		[...npm.args, "pack", "--pack-destination", distDir, "--quiet"],
-		{ cwd: packageDir, encoding: "utf8", shell: npm.shell },
-	).trim();
+		{ cwd: packageDir, shell: npm.shell },
+	);
 
-	// result is the filename npm wrote (e.g. abdwhb-png-pi-test-harness-0.7.0.tgz)
-	const generatedTarball = join(distDir, result);
-
-	if (!existsSync(generatedTarball)) {
-		throw new Error(`npm pack did not produce expected tarball: ${result}`);
+	const created = [...listTarballs(distDir)].filter(
+		(name) => !before.has(name),
+	);
+	if (created.length !== 1) {
+		throw new Error(
+			`npm pack wrote ${created.length} tarballs, expected one: ` +
+				(created.join(", ") || distDir),
+		);
 	}
 
 	// Rename to stable dist/package.tgz
-	renameSync(generatedTarball, tarballPath);
+	renameSync(join(distDir, created[0]), tarballPath);
 
 	// Verify the tarball exists and is a regular file
 	const stats = statSync(tarballPath);

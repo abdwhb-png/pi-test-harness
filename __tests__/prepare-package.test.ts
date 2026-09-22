@@ -297,6 +297,33 @@ describe("packageTarball", () => {
 		).toBe(false);
 	});
 
+	it("still returns the tarball when npm prints JSON instead of a filename", () => {
+		// Reproduces the 0.8.0 release failure. `npm pack` prints the bare filename
+		// only while npm_config_json is unset, and npm exports its own config into
+		// the environment of lifecycle scripts. changesets publishes with --json,
+		// so the `npm pack` nested inside `npm publish` printed JSON metadata and
+		// the old code joined that JSON onto dist/ as if it were a filename.
+		createMockRootPackage(["index.js", "index.d.ts"]);
+		preparePackage(fixtureDir);
+
+		const previous = process.env.npm_config_json;
+		process.env.npm_config_json = "true";
+		try {
+			const tarballPath = packageTarball(fixtureDir);
+
+			expect(existsSync(tarballPath)).toBe(true);
+			const listing = execFileSync("tar", ["-tf", tarballPath], {
+				encoding: "utf8",
+			})
+				.split(/\r?\n/)
+				.filter(Boolean);
+			expect(listing).toContain("package/index.js");
+		} finally {
+			if (previous === undefined) delete process.env.npm_config_json;
+			else process.env.npm_config_json = previous;
+		}
+	});
+
 	it("packed package.json has peerDependencies but no scripts or devDependencies", () => {
 		createMockRootPackage(["index.js", "index.d.ts"]);
 		preparePackage(fixtureDir);
