@@ -12,6 +12,7 @@ import {
 	type Context,
 	type Model,
 	type SimpleStreamOptions,
+	type ToolCall,
 } from "@earendil-works/pi-ai";
 import type { PlaybookAction, Turn, ToolResultRecord } from "./types.js";
 import { formatPlaybookDiagnostic } from "./diagnostics.js";
@@ -77,7 +78,8 @@ function createAssistantMessage(action: PlaybookAction, toolCallCounter: number)
 	if (action.type === "say") {
 		content.push({ type: "text", text: action.text ?? "" });
 	} else if (action.type === "call") {
-		const resolvedParams = resolveParams(action.params);
+		// Pi 0.87 requires tool-call arguments to be JSON on the wire.
+		const resolvedParams: ToolCall["arguments"] = JSON.parse(JSON.stringify(resolveParams(action.params)));
 		content.push({
 			type: "toolCall",
 			id: `playbook-tc-${toolCallCounter}`,

@@ -20,7 +20,6 @@ import {
 	type AgentSessionEvent,
 	ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { createPlaybookStreamFn, type PlaybookState } from "./playbook.js";
 import { interceptToolExecution } from "./mock-tools.js";
 import { createMockUIContext } from "./mock-ui.js";
@@ -177,8 +176,6 @@ export async function createTestSession(
 		},
 	});
 
-	const originalTools: AgentTool[] = [...session.agent.state.tools];
-
 	const testSession: TestSession = {
 		session,
 		cwd,
@@ -199,32 +196,38 @@ export async function createTestSession(
 			session.agent.streamFunction = streamFn;
 
 			const effectiveMockTools = options.mockTools ?? {};
-			const currentTools = originalTools;
-			const {
-				tools: interceptedTools,
-				mockedNames,
-				mockedErrorToolCallIds: errorIds,
-			} = interceptToolExecution(
-				currentTools,
-				effectiveMockTools,
-				state,
-				propagateErrors,
-			);
-			mockedToolNames = mockedNames;
-			mockedErrorToolCallIds = errorIds;
-			session.agent.state.tools = interceptedTools;
+			const errorIds = new Set<string>();
+			const originalPrepareRequest = session.agent.prepareRequest;
+			session.agent.prepareRequest = async (request, signal) => {
+				const update = await originalPrepareRequest?.(request, signal);
+				const context = update?.context ?? request.context;
+				const result = interceptToolExecution(
+					context.tools ?? [],
+					effectiveMockTools,
+					state,
+					propagateErrors,
+					errorIds,
+				);
+				mockedToolNames = result.mockedNames;
+				mockedErrorToolCallIds = errorIds;
+				// Keep Pi's registry intact; the agent loop executes this request snapshot.
+				return { ...update, context: { ...context, tools: result.tools } };
+			};
+			try {
+				for (const turn of turns) {
+					currentStep = state.consumed;
+					await session.prompt(turn.prompt);
+					await session.agent.waitForIdle();
+				}
 
-			for (const turn of turns) {
-				currentStep = state.consumed;
-				await session.prompt(turn.prompt);
-				await session.agent.waitForIdle();
-			}
-
-			if (state.remaining > 0) {
-				const allActions = turns.flatMap((t) => t.actions);
-				const remaining = allActions.slice(state.consumed);
-				const diagnostic = formatPlaybookDiagnostic("remaining", state, remaining);
-				throw new Error(diagnostic);
+				if (state.remaining > 0) {
+					const allActions = turns.flatMap((t) => t.actions);
+					const remaining = allActions.slice(state.consumed);
+					const diagnostic = formatPlaybookDiagnostic("remaining", state, remaining);
+					throw new Error(diagnostic);
+				}
+			} finally {
+				session.agent.prepareRequest = originalPrepareRequest;
 			}
 		},
 

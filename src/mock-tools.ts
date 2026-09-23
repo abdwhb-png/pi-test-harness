@@ -92,13 +92,13 @@ export function interceptToolExecution(
 	mockTools: Record<string, MockToolHandler>,
 	playbookState: PlaybookState,
 	propagateErrors: boolean,
+	mockedErrorToolCallIds = new Set<string>(),
 ): {
 	tools: AgentTool[];
 	mockedNames: ReadonlySet<string>;
 	mockedErrorToolCallIds: ReadonlySet<string>;
 } {
 	const mockedNames = new Set(Object.keys(mockTools));
-	const mockedErrorToolCallIds = new Set<string>();
 
 	const wrapped = tools.map((tool) => {
 		const mockHandler = mockTools[tool.name];
