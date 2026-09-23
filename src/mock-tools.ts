@@ -218,11 +218,9 @@ function wrapForCollection(
 					throw new Error(diagnostic, { cause: err });
 				}
 
-				return {
-					content: [{ type: "text", text: errMsg }],
-					details: {},
-					isError: true,
-				};
+				// Pi owns the error result. Returning a fulfilled ToolResult would
+				// turn the failure into isError:false in the agent event stream.
+				throw err;
 			}
 		},
 	} as AgentTool;

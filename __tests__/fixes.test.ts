@@ -48,6 +48,34 @@ function counterToolFactory(hits: { count: number }) {
 // ── Fix 1: toolResultsFor() without mockTools ──────────────────────────────────
 
 describe("toolResultsFor without mockTools", () => {
+	it("preserves Pi's native error result for a real tool", async () => {
+		const t = await createTestSession({
+			propagateErrors: false,
+			extensionFactories: [
+				(pi: any) => {
+					const { Type } = require("typebox");
+					pi.registerTool({
+						name: "failing_tool",
+						label: "Failing tool",
+						description: "Fails through the real Pi tool boundary",
+						parameters: Type.Object({}),
+						async execute() {
+							throw new Error("deliberate failure");
+						},
+					});
+				},
+			],
+		});
+		try {
+			await t.run(when("Call the failing tool", [calls("failing_tool", {}), says("Done.")]));
+			expect(t.events.toolResultsFor("failing_tool")).toMatchObject([
+				{ isError: true, text: "deliberate failure", mocked: false },
+			]);
+		} finally {
+			t.dispose();
+		}
+	});
+
 	it("collects real tool results when mockTools is not configured", async () => {
 		const hits = { count: 0 };
 		const t = await createTestSession({
