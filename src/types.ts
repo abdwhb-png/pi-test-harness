@@ -1,3 +1,4 @@
+import type { ToolCall } from "@earendil-works/pi-ai";
 /**
  * Shared types for pi-test-harness.
  */
@@ -15,7 +16,7 @@ export interface PlaybookAction {
 	/** For "call": tool name */
 	toolName?: string;
 	/** For "call": static or late-bound params */
-	params?: Record<string, unknown> | (() => Record<string, unknown>);
+	params?: ToolCall["arguments"] | (() => ToolCall["arguments"]);
 	/** For "say": text content */
 	text?: string;
 	/** Optional callback after tool execution */

@@ -8,6 +8,7 @@
 import {
 	createAssistantMessageEventStream,
 	type AssistantMessage,
+	type ToolCall,
 	type AssistantMessageEventStream,
 	type Context,
 	type Model,
@@ -22,7 +23,7 @@ import { formatPlaybookDiagnostic } from "./diagnostics.js";
 class CallAction {
 	readonly action: PlaybookAction;
 
-	constructor(toolName: string, params: Record<string, unknown> | (() => Record<string, unknown>)) {
+	constructor(toolName: string, params: ToolCall["arguments"] | (() => ToolCall["arguments"])) {
 		this.action = { type: "call", toolName, params };
 	}
 
@@ -39,7 +40,7 @@ class CallAction {
  */
 export function calls(
 	toolName: string,
-	params: Record<string, unknown> | (() => Record<string, unknown>) = {},
+	params: ToolCall["arguments"] | (() => ToolCall["arguments"]) = {},
 ): CallAction {
 	return new CallAction(toolName, params);
 }
@@ -65,7 +66,7 @@ export function when(prompt: string, actions: Array<CallAction | PlaybookAction>
 
 // ── PlaybookStreamFn ────────────────────────────────────────
 
-function resolveParams(params: Record<string, unknown> | (() => Record<string, unknown>) | undefined): Record<string, unknown> {
+function resolveParams(params: ToolCall["arguments"] | (() => ToolCall["arguments"]) | undefined): ToolCall["arguments"] {
 	if (!params) return {};
 	if (typeof params === "function") return params();
 	return params;

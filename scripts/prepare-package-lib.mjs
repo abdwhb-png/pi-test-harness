@@ -185,9 +185,7 @@ export function packageTarball(rootDir) {
 		{ cwd: packageDir, shell: npm.shell },
 	);
 
-	const created = [...listTarballs(distDir)].filter(
-		(name) => !before.has(name),
-	);
+	const created = [...listTarballs(distDir)].filter((name) => !before.has(name));
 	if (created.length !== 1) {
 		throw new Error(
 			`npm pack wrote ${created.length} tarballs, expected one: ` +
