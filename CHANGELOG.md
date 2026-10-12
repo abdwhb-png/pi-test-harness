@@ -14,7 +14,7 @@
 
 ### Patch Changes
 
-- Keep nested npm installs compatible with npm 12 when `npm run` exports an `allow-scripts` policy from `.npmrc`. The sandbox and consumer smoke share the same environment handling, which lets npm read its policy from configuration files while preserving other settings and explicit environment options outside npm lifecycle scripts.
+- Keep nested npm installs compatible with npm 12 when `npm run` exports an `allow-scripts` policy from `.npmrc`. The sandbox and consumer smoke share the same environment handling, which lets npm read its policy from configuration files while preserving other settings and explicit environment options outside npm lifecycle scripts. Environment key matching handles Windows casing as well as lowercase keys.
 
 ## 0.8.0
 

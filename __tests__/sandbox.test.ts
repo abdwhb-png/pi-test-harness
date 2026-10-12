@@ -7,14 +7,19 @@ import { verifySandboxInstall, when, calls, says } from "../src/index.js";
 const DUMMY_EXTENSION = path.resolve(__dirname, "fixtures/dummy-extension");
 
 describe("verifySandboxInstall", () => {
-	it.each(["npm run", "direct invocation"])("handles allow-scripts from %s", async (mode) => {
+	it.each([
+		{ mode: "npm run", casing: "lowercase" },
+		{ mode: "npm run", casing: "uppercase" },
+		{ mode: "direct invocation", casing: "lowercase" },
+		{ mode: "direct invocation", casing: "uppercase" },
+	])("handles allow-scripts from $mode with $casing keys", async ({ mode, casing }) => {
 		const fixtureDir = mkdtempSync(path.join(tmpdir(), "pi-npm-config-fixture-"));
 		const cliPath = path.join(fixtureDir, "npm.mjs");
 		writeFileSync(cliPath, `
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const [fixture, command] = process.argv.slice(2);
-if (command === "install" && process.env.npm_config_allow_scripts) {
+if (command === "install" && (process.env.npm_config_allow_scripts || process.env.NPM_CONFIG_ALLOW_SCRIPTS)) {
   throw new Error("EALLOWSCRIPTS: npm run projected allow-scripts into a project install");
 }
 if (process.env.PI_TEST_INSTALL_MARKER !== "preserved") {
@@ -32,14 +37,17 @@ if (command === "pack") {
   throw new Error("Unexpected npm command: " + command);
 }
 `);
-		const original = {
-			lifecycle: process.env.npm_lifecycle_event,
-			allowScripts: process.env.npm_config_allow_scripts,
-			marker: process.env.PI_TEST_INSTALL_MARKER,
-		};
-		if (mode === "npm run") process.env.npm_lifecycle_event = "test";
-		else delete process.env.npm_lifecycle_event;
-		process.env.npm_config_allow_scripts = "fixture-only@1.0.0";
+		const originalEnv = process.env;
+		process.env = { ...originalEnv };
+		for (const key of Object.keys(process.env)) {
+			if (["npm_lifecycle_event", "npm_config_allow_scripts"].includes(key.toLowerCase())) {
+				delete process.env[key];
+			}
+		}
+		const lifecycleKey = casing === "uppercase" ? "NPM_LIFECYCLE_EVENT" : "npm_lifecycle_event";
+		const allowScriptsKey = casing === "uppercase" ? "NPM_CONFIG_ALLOW_SCRIPTS" : "npm_config_allow_scripts";
+		if (mode === "npm run") process.env[lifecycleKey] = "test";
+		process.env[allowScriptsKey] = "fixture-only@1.0.0";
 		process.env.PI_TEST_INSTALL_MARKER = "preserved";
 		try {
 			const installation = verifySandboxInstall({
@@ -54,16 +62,9 @@ if (command === "pack") {
 			} else {
 				await expect(installation).rejects.toThrow("EALLOWSCRIPTS");
 			}
-			expect(process.env.npm_config_allow_scripts).toBe("fixture-only@1.0.0");
+			expect(process.env[allowScriptsKey]).toBe("fixture-only@1.0.0");
 		} finally {
-			for (const [key, value] of [
-				["npm_lifecycle_event", original.lifecycle],
-				["npm_config_allow_scripts", original.allowScripts],
-				["PI_TEST_INSTALL_MARKER", original.marker],
-			] as const) {
-				if (value === undefined) delete process.env[key];
-				else process.env[key] = value;
-			}
+			process.env = originalEnv;
 			rmSync(fixtureDir, { recursive: true, force: true });
 		}
 	});

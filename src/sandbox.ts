@@ -119,11 +119,19 @@ export function _spawnTarget(
  * npm run exports .npmrc settings as environment options. npm 12 rejects
  * allow-scripts from that layer for project installs, so let it read the
  * original policy from its configuration files instead.
+ * Windows environment keys can retain different casing in a copied object.
  * @internal
  */
 export function _npmSubprocessEnv(): NodeJS.ProcessEnv {
 	const env = { ...process.env };
-	if (env.npm_lifecycle_event) delete env.npm_config_allow_scripts;
+	const fromLifecycle = Object.entries(env).some(
+		([key, value]) => key.toLowerCase() === "npm_lifecycle_event" && value,
+	);
+	if (fromLifecycle) {
+		for (const key of Object.keys(env)) {
+			if (key.toLowerCase() === "npm_config_allow_scripts") delete env[key];
+		}
+	}
 	return env;
 }
 
