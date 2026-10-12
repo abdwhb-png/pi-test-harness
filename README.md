@@ -663,7 +663,9 @@ Releases are driven by [changesets](https://github.com/changesets/changesets) an
 1. Add a changeset for the change (`npm exec --no -- changeset`) and merge it alongside the work.
 2. Run the **Release** workflow (`workflow_dispatch`) on `main` — the base branch changesets reads. With pending changesets it opens a `chore: version packages` PR carrying the version bump and the changelog.
 3. Merge that PR, then run the workflow again: nothing is left to version, so it publishes to npm, creates the `v<version>` tag, and creates the GitHub Release from that version's changelog entry.
-4. changesets additionally tags `<pkg>@<version>`; the human-facing ref is `v<version>`.
+4. Read **Release summary** on the workflow run's Summary page. It lists the target version and commit, dependency install/build results, version PR, npm publication, remote tag, and GitHub Release, with links and reasons for skipped operations. The summary also runs after failures. A failed publishing step can have published to npm before failing, so its publication result is shown as unconfirmed rather than assuming nothing happened.
+
+The workflow uses Changesets action v2 with CLI v3, which communicates release results through a structured output file instead of parsing console messages. An npm preflight distinguishes a new publication from a version that was already available. If a version is already on npm, this workflow skips remote tag and GitHub Release creation. Recover missing release metadata separately at the package's original npm `gitHead`, rather than tagging a later commit. This single-package repository uses the `v<version>` tag.
 
 For a release prepared locally, apply its pending changeset with `npm exec --no -- changeset version`, then synchronize the npm lockfile and qualify the resulting artifacts. Once that version commit has passed CI and publication is explicitly authorized, the manual Release workflow can publish it without an intermediate version PR. Local qualification does not publish or install the package into a daily Pi runtime.
 

@@ -23,27 +23,46 @@ jobs:
           cache: npm
       - run: npm install -g sfw@2.0.6
       - run: sfw --version
-      - run: sfw npm ci
-      - run: npm run build
+      - name: Install dependencies
+        id: install
+        run: sfw npm ci
+      - name: Build release artifacts
+        id: build
+        run: npm run build
+      - name: Check whether the target version is already on npm
+        id: npm_before
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from "node:fs";
+          const { name, version } = JSON.parse(readFileSync("package.json", "utf8"));
+          const url = `https://registry.npmjs.org/${encodeURIComponent(name)}/${version}`;
+          const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+          if (response.status !== 200 && response.status !== 404) {
+            throw new Error(`npm preflight failed: HTTP ${response.status}`);
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `exists=${response.status === 200}\nname=${name}\nversion=${version}\n`);
+          NODE
 
       # With pending changesets this opens/updates the "chore: version packages"
       # PR. Run it again after merging that PR: nothing is left to version, so
       # this step publishes the packed package to npm instead.
       - name: Create version PR or publish to npm
         id: changesets
-        uses: changesets/action@63a615b9cd06ba9a3e6d13796c7fbcb080a60a0b # v1
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2, Changesets CLI 3
         with:
-          title: "chore: version packages"
-          commit: "chore: version packages"
-          publish: npm run release
-          # One GitHub Release per version, created from the vX.Y.Z tag below
-          # rather than duplicating it under changesets' package-scoped tag.
-          createGithubReleases: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          pr-title: "chore: version packages"
+          commit-message: "chore: version packages"
+          publish-script: npm run release
+          # The explicit step below owns remote tags and GitHub Releases.
+          create-github-releases: false
+          push-git-tags: false
+          push-with-git-cli: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Tag vX.Y.Z and create the GitHub Release
-        if: steps.changesets.outputs.published == 'true'
+        id: github_release
+        # Already-published versions need metadata recovery at their original commit.
+        if: steps.changesets.outputs.published == 'true' && steps.npm_before.outputs.exists == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -57,9 +76,11 @@ jobs:
             git tag "$TAG"
           fi
           git push origin "$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists."
+            echo "release=existing" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -83,3 +104,10 @@ jobs:
             echo "No CHANGELOG section for $VERSION; using generated notes."
             gh release create "$TAG" --title "$TAG" --generate-notes
           fi
+          echo "release=created" >> "$GITHUB_OUTPUT"
+      - name: Write release summary
+        if: ${{ always() }}
+        env:
+          RELEASE_JOB_STATUS: ${{ job.status }}
+          RELEASE_STEPS: ${{ toJSON(steps) }}
+        run: node scripts/release-summary.mjs

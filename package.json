@@ -53,8 +53,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/ __tests__/ scripts/consumer-smoke.mjs scripts/consumer-scenario.mjs",
-    "test:unit": "vitest run __tests__/playbook.test.ts __tests__/mock-pi.test.ts __tests__/resolve-executable.test.ts",
+    "lint": "eslint src/ __tests__/ scripts/consumer-smoke.mjs scripts/consumer-scenario.mjs scripts/release-summary.mjs",
+    "test:unit": "vitest run __tests__/playbook.test.ts __tests__/mock-pi.test.ts __tests__/resolve-executable.test.ts __tests__/release-workflow.test.ts",
     "test:integration": "vitest run __tests__/integration.test.ts __tests__/extension-loading.test.ts __tests__/sandbox.test.ts __tests__/fixes.test.ts __tests__/pi-11-compat.test.ts __tests__/prepare-package.test.ts",
     "test:bun": "bun test --isolate scripts/extension-loading-smoke.test.ts",
     "test:consumer": "node scripts/consumer-smoke.mjs"
