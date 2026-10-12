@@ -1,5 +1,21 @@
 # @abdwhb-png/pi-test-harness
 
+## 0.9.0
+
+### Minor Changes
+
+- Stabilize the harness on Pi 1.1 with unchanged public APIs. The three Pi peer dependencies now require `~1.1.0`, and development dependencies remain pinned to `1.1.0`. Older Pi lines are no longer supported by this release.
+
+  Qualify request-time tool interception through Pi's real hooks, including prepared request updates, abort signals, callback restoration after success or failure, and repeated runs without duplicate execution or results.
+
+  The consumer smoke installs both the npm tarball and `dist/package.tgz` independently with exact Pi peers. The same offline session scenario verifies exports, declarations, bundled skill metadata, real and mocked tools, hook modifications, policy refusal, and recovery under Node 24 and Bun 1.3.14 on Linux. The existing Node 22/24 integration matrix on Linux and Windows remains in place.
+
+  Align the README and canonical bundled skill with the Pi 1.1 contract. Upgrade Changesets to 3.0.3 and refresh the compatible source-map-js dependency to 1.2.2 to remove the dependency audit findings without changing other direct dependency versions.
+
+### Patch Changes
+
+- Keep nested npm installs compatible with npm 12 when `npm run` exports an `allow-scripts` policy from `.npmrc`. The sandbox and consumer smoke share the same environment handling, which lets npm read its policy from configuration files while preserving other settings and explicit environment options outside npm lifecycle scripts.
+
 ## 0.8.0
 
 ### Minor Changes

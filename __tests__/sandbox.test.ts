@@ -1,10 +1,73 @@
 import { describe, it, expect } from "vitest";
 import * as path from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { verifySandboxInstall, when, calls, says } from "../src/index.js";
 
 const DUMMY_EXTENSION = path.resolve(__dirname, "fixtures/dummy-extension");
 
 describe("verifySandboxInstall", () => {
+	it.each(["npm run", "direct invocation"])("handles allow-scripts from %s", async (mode) => {
+		const fixtureDir = mkdtempSync(path.join(tmpdir(), "pi-npm-config-fixture-"));
+		const cliPath = path.join(fixtureDir, "npm.mjs");
+		writeFileSync(cliPath, `
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const [fixture, command] = process.argv.slice(2);
+if (command === "install" && process.env.npm_config_allow_scripts) {
+  throw new Error("EALLOWSCRIPTS: npm run projected allow-scripts into a project install");
+}
+if (process.env.PI_TEST_INSTALL_MARKER !== "preserved") {
+  throw new Error("The npm child lost unrelated environment settings");
+}
+if (command === "pack") {
+  writeFileSync("fixture.tgz", "controlled package fixture");
+  console.log("fixture.tgz");
+} else if (command === "install") {
+  const { name } = JSON.parse(readFileSync(join(fixture, "package.json"), "utf8"));
+  const target = join(process.cwd(), "node_modules", name);
+  mkdirSync(target, { recursive: true });
+  cpSync(fixture, target, { recursive: true });
+} else {
+  throw new Error("Unexpected npm command: " + command);
+}
+`);
+		const original = {
+			lifecycle: process.env.npm_lifecycle_event,
+			allowScripts: process.env.npm_config_allow_scripts,
+			marker: process.env.PI_TEST_INSTALL_MARKER,
+		};
+		if (mode === "npm run") process.env.npm_lifecycle_event = "test";
+		else delete process.env.npm_lifecycle_event;
+		process.env.npm_config_allow_scripts = "fixture-only@1.0.0";
+		process.env.PI_TEST_INSTALL_MARKER = "preserved";
+		try {
+			const installation = verifySandboxInstall({
+				packageDir: DUMMY_EXTENSION,
+				npmCommand: [process.execPath, cliPath, DUMMY_EXTENSION],
+				expect: { extensions: 1, tools: ["dummy_tool"] },
+			});
+			if (mode === "npm run") {
+				const result = await installation;
+				expect(result.loaded.extensionErrors).toEqual([]);
+				expect(result.loaded.tools).toContain("dummy_tool");
+			} else {
+				await expect(installation).rejects.toThrow("EALLOWSCRIPTS");
+			}
+			expect(process.env.npm_config_allow_scripts).toBe("fixture-only@1.0.0");
+		} finally {
+			for (const [key, value] of [
+				["npm_lifecycle_event", original.lifecycle],
+				["npm_config_allow_scripts", original.allowScripts],
+				["PI_TEST_INSTALL_MARKER", original.marker],
+			] as const) {
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+			rmSync(fixtureDir, { recursive: true, force: true });
+		}
+	});
+
 	it("installs and loads a dummy extension package", async () => {
 		const result = await verifySandboxInstall({
 			packageDir: DUMMY_EXTENSION,

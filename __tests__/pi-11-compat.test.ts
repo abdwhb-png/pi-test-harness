@@ -1,16 +1,17 @@
 /**
- * Pi 0.85 compatibility tests.
+ * Pi 1.1 compatibility tests.
  *
- * These tests verify that the harness works correctly with Pi 0.85 APIs:
+ * These tests verify that the harness works correctly with Pi 1.1 APIs:
  *   - ModelRuntime isolation (no credentials, no ~/.pi touch)
  *   - Public Agent APIs (streamFunction, state.tools, waitForIdle)
  *   - AgentSession hooks (beforeToolCall / afterToolCall installed by AgentSession)
- *   - ExtensionUIContext with new 0.83 members
+ *   - ExtensionUIContext with indicator and autocomplete members
  *   - AgentSession typed on TestSession.session
  */
 
 import { describe, it, expect, afterEach } from "vitest";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import {
 	createTestSession,
 	when,
@@ -19,9 +20,9 @@ import {
 	type TestSession,
 } from "../src/index.js";
 
-describe("Pi 0.85 compat — isolated session", () => {
+describe("Pi 1.1 compat — isolated session", () => {
 	it("dummy runtime API key synchronization stays offline", async () => {
-		// Pi 0.85 owns the offline credential synchronization policy. The
+		// Pi 1.1 owns the offline credential synchronization policy. The
 		// harness must not pass the removed allowNetwork option, and session
 		// initialization must not attempt a network request.
 		type RefreshOptions = Parameters<
@@ -97,7 +98,7 @@ describe("Pi 0.85 compat — isolated session", () => {
 	});
 });
 
-describe("Pi 0.85 compat — hook pipeline", () => {
+describe("Pi 1.1 compat — hook pipeline", () => {
 	let t: TestSession;
 
 	afterEach(() => t?.dispose());
@@ -220,14 +221,14 @@ describe("Pi 0.85 compat — hook pipeline", () => {
 			when("Call bash once", [calls("bash", { command: "ls" }), says("Done.")]),
 		);
 
-		// AgentSession 0.83 fires hooks internally via beforeToolCall/afterToolCall.
+		// AgentSession fires hooks internally via beforeToolCall/afterToolCall.
 		// The harness must NOT re-emit them.
 		expect(hookCounts.toolCall).toBe(1);
 		expect(hookCounts.toolResult).toBe(1);
 	});
 });
 
-describe("Pi 0.85 compat — ExtensionUIContext", () => {
+describe("Pi 1.1 compat — ExtensionUIContext", () => {
 	let t: TestSession;
 
 	afterEach(() => t?.dispose());
@@ -315,12 +316,143 @@ describe("Pi 0.85 compat — ExtensionUIContext", () => {
 		// Import and invoke to verify the return type compiles
 		const { createMockUIContext } = await import("../src/mock-ui.js");
 		const ctx = createMockUIContext({}, []);
-		// All 0.83 ExtensionUIContext members must be present
+		// All supported ExtensionUIContext members must be present
 		expect(typeof ctx.setWorkingVisible).toBe("function");
 		expect(typeof ctx.setWorkingIndicator).toBe("function");
 		expect(typeof ctx.setHiddenThinkingLabel).toBe("function");
 		expect(typeof ctx.addAutocompleteProvider).toBe("function");
 		expect(typeof ctx.getEditorComponent).toBe("function");
 		expect(ctx.getEditorComponent()).toBeUndefined();
+	});
+});
+
+describe("Pi 1.1 compat — request preparation", () => {
+	let t: TestSession;
+
+	afterEach(() => t?.dispose());
+
+	it("preserves prepared tools, thinking level, and abort signal", async () => {
+		let originalExecutions = 0;
+		let preparedExecutions = 0;
+		t = await createTestSession({
+			extensionFactories: [
+				(pi) => {
+					pi.registerTool({
+						name: "prepared_counter",
+						label: "Prepared counter",
+						description: "Exercise the prepared request tool registry",
+						parameters: Type.Object({}),
+						async execute() {
+							originalExecutions += 1;
+							return { content: [{ type: "text", text: "original" }], details: {} };
+						},
+					});
+				},
+			],
+			mockTools: { bash: "mocked bash" },
+		});
+		const agent = t.session.agent;
+		const nativePrepareRequest = agent.prepareRequest;
+		const requests: Array<{
+			signal: AbortSignal | undefined;
+			activeSignal: AbortSignal | undefined;
+			modelId: string;
+		}> = [];
+		const prepareRequest: NonNullable<typeof agent.prepareRequest> = async (
+			request,
+			signal,
+		) => {
+			requests.push({
+				signal,
+				activeSignal: agent.signal,
+				modelId: request.model.id,
+			});
+			const update = await nativePrepareRequest?.(request, signal);
+			const context = update?.context ?? request.context;
+			return {
+				...update,
+				thinkingLevel: "high",
+				context: {
+					...context,
+					tools: context.tools?.map((tool) =>
+						tool.name === "prepared_counter"
+							? {
+								...tool,
+								async execute() {
+									preparedExecutions += 1;
+									return {
+										content: [{ type: "text", text: "prepared execution" }],
+										details: {},
+									};
+								},
+							}
+							: tool,
+					),
+				},
+			};
+		};
+		agent.prepareRequest = prepareRequest;
+
+		await t.run(
+			when("Run prepared tools", [
+				calls("prepared_counter", {}),
+				calls("bash", { command: "must be mocked" }),
+				says("Done."),
+			]),
+		);
+
+		expect(originalExecutions).toBe(0);
+		expect(preparedExecutions).toBe(1);
+		expect(t.events.toolResultsFor("prepared_counter")).toMatchObject([
+			{ text: "prepared execution", mocked: false, isError: false },
+		]);
+		expect(t.events.toolResultsFor("bash")).toMatchObject([
+			{ text: "mocked bash", mocked: true, isError: false },
+		]);
+		expect(requests).toHaveLength(3);
+		expect(requests[0].modelId).toBe("gpt-4o");
+		expect(t.events.messages
+			.filter((message) => message.role === "assistant")
+			.map((message) => message.thinkingLevel)
+		).toEqual(["high", "high", "high"]);
+		for (const request of requests) {
+			expect(request.signal).toBeInstanceOf(AbortSignal);
+			expect(request.signal).toBe(request.activeSignal);
+		}
+		expect(agent.prepareRequest).toBe(prepareRequest);
+	});
+
+	it.each(["success", "failure"])("restores the callback after %s and allows another run", async (outcome) => {
+		t = await createTestSession({ mockTools: { bash: "recovered" } });
+		const originalPrepareRequest = t.session.agent.prepareRequest;
+		const run = t.run(when("First run", outcome === "failure"
+			? [says("Stopped."), says("Unused.")]
+			: [says("Done.")],
+		));
+		if (outcome === "failure") {
+			await expect(run).rejects.toThrow("Playbook not fully consumed");
+		} else {
+			await run;
+		}
+		expect(t.session.agent.prepareRequest).toBe(originalPrepareRequest);
+
+		await t.run(when("Run again", [calls("bash", { command: "must be mocked" }), says("Done.")]));
+		expect(t.events.toolResultsFor("bash")).toMatchObject([{ text: "recovered", mocked: true, isError: false }]);
+		expect(t.session.agent.prepareRequest).toBe(originalPrepareRequest);
+	});
+
+	it.each(["success", "failure"])("restores an absent callback after %s", async (outcome) => {
+		t = await createTestSession();
+		t.session.agent.prepareRequest = undefined;
+		const run = t.run(when("Run without preparation", outcome === "failure"
+			? [says("Stopped."), says("Unused.")]
+			: [says("Done.")],
+		));
+		if (outcome === "failure") {
+			await expect(run).rejects.toThrow("Playbook not fully consumed");
+		} else {
+			await run;
+		}
+		expect(t.session.agent.prepareRequest).toBeUndefined();
 	});
 });

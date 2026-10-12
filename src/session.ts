@@ -79,7 +79,7 @@ export async function createTestSession(
 
 	// Provide a dummy API key so AgentSession.prompt does not reject before
 	// the playbook replaces streamFunction. The key is never sent to any LLM.
-	// Pi 0.84 synchronizes runtime credentials with an offline model refresh.
+	// Pi synchronizes runtime credentials with an offline model refresh.
 	await modelRuntime.setRuntimeApiKey("openai", "sk-test-harness-dummy");
 
 	const { session, extensionsResult } = await withoutJitiNativeImport(() =>
@@ -108,8 +108,7 @@ export async function createTestSession(
 	const events = createEventCollector();
 	let currentStep = 0;
 	let mockedToolNames: ReadonlySet<string> = new Set();
-	// toolCallIds whose mock returned a ToolResult with isError:true — Pi 0.84
-	// hardcodes successful execute() as non-error, so records must consult this.
+	// Preserve the mock's error intent when its wrapper returns content/details.
 	let mockedErrorToolCallIds: ReadonlySet<string> = new Set();
 
 	session.subscribe((event: AgentSessionEvent) => {
@@ -201,39 +200,42 @@ export async function createTestSession(
 			session.agent.prepareRequest = async (request, signal) => {
 				const update = await originalPrepareRequest?.(request, signal);
 				const context = update?.context ?? request.context;
-				const result = interceptToolExecution(context.tools ?? [], effectiveMockTools, state, propagateErrors, errorIds);
+				const result = interceptToolExecution(
+					context.tools ?? [],
+					effectiveMockTools,
+					state,
+					propagateErrors,
+					errorIds,
+				);
 				mockedToolNames = result.mockedNames;
 				mockedErrorToolCallIds = errorIds;
 				// Pi executes this request snapshot after rebuilding its tool registry.
 				return { ...update, context: { ...context, tools: result.tools } };
 			};
 			try {
-			for (const turn of turns) {
-				currentStep = state.consumed;
-				await session.prompt(turn.prompt);
-				await session.agent.waitForIdle();
-			}
+				for (const turn of turns) {
+					currentStep = state.consumed;
+					await session.prompt(turn.prompt);
+					await session.agent.waitForIdle();
+				}
 
-			if (state.remaining > 0) {
-				const allActions = turns.flatMap((t) => t.actions);
-				const remaining = allActions.slice(state.consumed);
-				const diagnostic = formatPlaybookDiagnostic("remaining", state, remaining);
-				throw new Error(diagnostic);
-			}
+				if (state.remaining > 0) {
+					const allActions = turns.flatMap((t) => t.actions);
+					const remaining = allActions.slice(state.consumed);
+					const diagnostic = formatPlaybookDiagnostic("remaining", state, remaining);
+					throw new Error(diagnostic);
+				}
 			} finally {
 				session.agent.prepareRequest = originalPrepareRequest;
 			}
-
 		},
 
 		/**
 		 * Dispose the test session and clean up the temp directory (if owned).
 		 *
-		 * Note: `session.dispose()` does NOT fire `session_shutdown`. That event is
-		 * dispatched by pi at Node.js process exit. Extensions that open resources in
-		 * `session_start` (e.g., SQLite databases) keep those resources open until the
-		 * process exit. Use `safeRmSync` when cleaning up extension-owned files in
-		 * afterEach hooks on Windows to avoid EPERM errors.
+		 * `session.dispose()` does not emit `session_shutdown`. Resources closed
+		 * only by shutdown hooks can remain open until reload or CLI shutdown.
+		 * Use `safeRmSync` for extension-owned files locked on Windows.
 		 */
 		dispose(): void {
 			session.dispose();

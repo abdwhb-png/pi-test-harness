@@ -9,16 +9,16 @@ metadata:
   package_author: "abdwhb-png (maintained fork of marcfargas' MIT-licensed pi-test-harness; pi itself is by Mario Zechner / earendil-works)"
   skill_author: abdwhb-png
   source: https://github.com/abdwhb-png/pi-test-harness
-  version: "0.7.0"
+  version: "0.9.0"
   languages: [TypeScript, JavaScript]
   category: testing
 ---
 
 # pi-test-harness
 
-`@abdwhb-png/pi-test-harness` is a maintained fork of Marc Fargas' MIT-licensed [pi-test-harness](https://github.com/marcfargas/pi-test-harness) for [Pi](https://github.com/earendil-works/pi-coding-agent) extensions, targeting **Pi 0.85.x only**. It keeps the upstream API and credits Marc Fargas' original work (pi-powershell, pi-tramp, pi-planner, etc.; note that pi itself is maintained by Mario Zechner / earendil-works, not the same person). Its job: let you exercise **real** extension code paths (tool registration, hooks, session events, UI prompts) in any test runner with zero LLM calls and full determinism.
+`@abdwhb-png/pi-test-harness` is a maintained fork of Marc Fargas' MIT-licensed [pi-test-harness](https://github.com/marcfargas/pi-test-harness) for [Pi](https://github.com/earendil-works/pi-coding-agent) extensions, targeting **Pi 1.1.x only**. It keeps the upstream API and credits Marc Fargas' original work (pi-powershell, pi-tramp, pi-planner, etc.; note that pi itself is maintained by Mario Zechner / earendil-works, not the same person). Its job: let you exercise **real** extension code paths (tool registration, hooks, session events, UI prompts) in any test runner with zero LLM calls and full determinism.
 
-> **Verify before use**: this skill snapshots the fork README as of harness v0.7.0 (Pi 0.85.x). If the API ends up looking subtly different, re-fetch the README from <https://github.com/abdwhb-png/pi-test-harness> before trusting any snippet here. Note: the harness version (e.g. `0.7.0`) and the Pi version (e.g. `0.85.x`) are **independent release tracks** — do not compare them numerically.
+> **Verify before use**: this skill snapshots the fork README as of harness v0.9.0 (Pi 1.1.x). If the API ends up looking subtly different, re-fetch the README from <https://github.com/abdwhb-png/pi-test-harness> before trusting any snippet here. Note: the harness version (e.g. `0.9.0`) and the Pi version (e.g. `1.1.x`) are **independent release tracks** — do not compare them numerically.
 
 ## The mental model: "let pi be pi"
 
@@ -48,7 +48,7 @@ The harness minimizes faking. Everything runs through Pi's real code (extension 
 | `tool.execute()`| Mock handler   | Control what built-in tools "return" (hooks still fire) |
 | `ctx.ui.*`      | Mock UI        | Control what the user "answers"                  |
 
-Read this as: **only the LLM is non-deterministic, so only the LLM is faked.** Real-provider smoke tests belong in app code with the provider configured, not here.
+The playbook replaces the model boundary. Optional tool and UI mocks control external side effects and user responses. Real-provider smoke tests belong in the application that owns the provider configuration.
 
 ## Which layer do I need?
 
@@ -285,7 +285,7 @@ For `ToolCallRecord`, `ToolResultRecord`, and `UICallRecord` shapes — and the 
 
 ## Handling blocked tools
 
-When an extension hook blocks a mocked tool, the canonical signal is the event record: `blocked: true` + `blockReason` on the `ToolCallRecord`, and `isError: true` + result text on the `ToolResultRecord`. Assert those fields — `ToolBlockedError` is still exported for source compatibility, but normal Pi 0.84 runs through `AgentSession` do not promise to throw it:
+When an extension hook blocks a mocked tool, the canonical signal is the event record: `blocked: true` + `blockReason` on the `ToolCallRecord`, and `isError: true` + result text on the `ToolResultRecord`. Assert those fields — `ToolBlockedError` is still exported for source compatibility, but normal Pi 1.1 runs through `AgentSession` do not promise to throw it:
 
 ```typescript
 import {
@@ -375,7 +375,7 @@ The key-validation behavior (throws on typos like `{ ouptut: ... }`), the concur
 
 ## Windows + SQLite: use `safeRmSync` in `afterEach`
 
-This is the single biggest Windows footgun, and it always bites users who haven't seen it before. `session.dispose()` does **not** fire `session_shutdown`; that event fires on Node process exit. Extensions that open SQLite databases in `session_start` (memory extensions, brainiac, etc.) keep those files locked for the entire test runner lifetime.
+This is the single biggest Windows footgun, and it always bites users who haven't seen it before. `session.dispose()` does **not** fire `session_shutdown`; the CLI emits it during shutdown, and Pi also emits it during reload. Extensions that rely on shutdown hooks to close SQLite databases can keep those files locked until reload or process shutdown.
 
 On Windows, `rmSync(dbPath)` in `afterEach` will throw `EPERM` because the file is still locked. Use the bundled `safeRmSync` instead, which swallows only `EPERM`/`EBUSY`:
 
@@ -392,7 +392,7 @@ afterEach(() => {
 });
 ```
 
-Files get cleaned up by the OS when the test process exits anyway. For isolation across tests, give each one a unique DB path (typically `mkdtempSync` + the test name).
+Open file handles are released when the test process exits. For isolation across tests, give each one a unique DB path (typically `mkdtempSync` + the test name).
 
 `safeRmSync` only suppresses `EPERM` and `EBUSY` — every other error still propagates.
 
@@ -405,16 +405,16 @@ If your extension registers a tool named `my_tool`, don't also put `my_tool` in 
 Pi extensions that open a SQLite DB (memory extensions, etc.) keep the file handle for the test process's lifetime. Skipping `dispose()` + `safeRmSync()` causes cross-test contamination and `EPERM` on Windows. See the "Windows + SQLite" section.
 
 **3. Mocking a tool that an extension hook will block.**
-When your hook blocks a call (plan mode, dangerous command), the mock handler never executes. Assert the block via the event records — `blocked: true`/`blockReason` on the `ToolCallRecord` and `isError: true` on the `ToolResultRecord` — rather than expecting a `ToolBlockedError` throw from normal Pi 0.84 runs.
+When your hook blocks a call (plan mode, dangerous command), the mock handler never executes. Assert the block via the event records — `blocked: true`/`blockReason` on the `ToolCallRecord` and `isError: true` on the `ToolResultRecord` — rather than expecting a `ToolBlockedError` throw from normal Pi 1.1 runs.
 
 **4. Assuming hooks fire on the mock path.**
-Pi's `tool_call` / `tool_result` hooks **do** fire for mocked tools through `AgentSession`'s hook pipeline, but lifecycle hooks (`session_start`, `session_shutdown`) follow Pi's normal timing. `session_shutdown` only fires on process exit — `dispose()` will not trigger it. Plan accordingly.
+Pi's `tool_call` / `tool_result` hooks **do** fire for mocked tools through `AgentSession`'s hook pipeline, but lifecycle hooks (`session_start`, `session_shutdown`) follow Pi's normal timing. `dispose()` does not emit `session_shutdown`. Pi emits it at lifecycle boundaries such as reload or CLI shutdown. Plan accordingly.
 
 **5. Reimplementing extension logic inside the test.**
 `createMockPi` replaces only the `pi` executable. Load or import the real extension code that spawns it; never paste a local copy of the subprocess helper into the test, because that can pass while the extension is broken.
 
 **6. Trusting the snapshot blindly.**
-The `description` and code in this skill are pinned to fork v0.7.0 (Pi 0.85.x). On any minor bump, re-fetch the fork README and reconcile before trusting snippets.
+The `description` and code in this skill are pinned to fork v0.9.0 (Pi 1.1.x). On any minor bump, re-fetch the fork README and reconcile before trusting snippets.
 
 ## Test-layer summary
 
@@ -430,14 +430,13 @@ The `description` and code in this skill are pinned to fork v0.7.0 (Pi 0.85.x). 
 npm install --save-dev @abdwhb-png/pi-test-harness
 ```
 
-In `~/.pi/agent`, the fork is consumed as a local dev dependency:
-`bun add --dev file:../../projects/pi-integrations/pi-test-harness/dist/package.tgz`
+For local consumer qualification, build this checkout with `npm run build`, then install its `dist/package.tgz` through the consumer’s established package manager and security controls. Use an absolute path to the tarball. Keep runtime installation and promotion separate from package qualification.
 
-Peer dependencies (Pi line `0.85.x` only):
+Peer dependencies (Pi line `1.1.x` only):
 
-- `@earendil-works/pi-coding-agent` ^0.85.0
-- `@earendil-works/pi-ai` ^0.85.0
-- `@earendil-works/pi-agent-core` ^0.85.0
+- `@earendil-works/pi-coding-agent` ~1.1.0
+- `@earendil-works/pi-ai` ~1.1.0
+- `@earendil-works/pi-agent-core` ~1.1.0
 
 ## Reference index
 

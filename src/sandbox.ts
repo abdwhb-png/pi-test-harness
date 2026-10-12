@@ -116,6 +116,18 @@ export function _spawnTarget(
 }
 
 /**
+ * npm run exports .npmrc settings as environment options. npm 12 rejects
+ * allow-scripts from that layer for project installs, so let it read the
+ * original policy from its configuration files instead.
+ * @internal
+ */
+export function _npmSubprocessEnv(): NodeJS.ProcessEnv {
+	const env = { ...process.env };
+	if (env.npm_lifecycle_event) delete env.npm_config_allow_scripts;
+	return env;
+}
+
+/**
  * Run a command via execFileSync with safe string conversion for the full
  * command line in the error message.
  */
@@ -127,6 +139,7 @@ function run(args: string[], cwd: string, label: string): string {
 			cwd,
 			encoding: "utf-8",
 			stdio: ["pipe", "pipe", "pipe"],
+			env: _npmSubprocessEnv(),
 		}).trim();
 	} catch (err: any) {
 		// Enhance the error message with context

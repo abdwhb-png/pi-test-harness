@@ -3,7 +3,7 @@
  *
  * For mocked tools, the mock replaces tool.execute() and returns controlled
  * values. Extension hooks (tool_call / tool_result) are handled by
- * AgentSession 0.83's internal beforeToolCall/afterToolCall — the mock
+ * AgentSession's internal beforeToolCall/afterToolCall — the mock
  * must NOT re-emit them.
  *
  * For non-mocked tools, the real execute() is called and results are
@@ -18,7 +18,7 @@ import { formatToolError } from "./diagnostics.js";
 /**
  * Thrown when an extension hook blocks a tool call.
  * Exported for test assertions — no longer thrown by the mock itself since
- * AgentSession 0.83's beforeToolCall handles blocking before execute().
+ * AgentSession's beforeToolCall handles blocking before execute().
  */
 export class ToolBlockedError extends Error {
 	readonly toolBlocked = true as const;
@@ -33,7 +33,7 @@ export class ToolBlockedError extends Error {
  * Returns true if `err` represents a hook-based tool block.
  *
  * Kept for consumers that catch errors from tool execution flows, though
- * AgentSession 0.83's beforeToolCall blocks before execute() is reached.
+ * AgentSession's beforeToolCall blocks before execute() is reached.
  */
 export function isBlockedError(err: unknown): boolean {
 	if (err instanceof ToolBlockedError) return true;
@@ -76,16 +76,15 @@ function normalizeMockResult(
  * Intercept tool execution for mocked tools.
  *
  * Unlike the old approach, this does NOT emit tool_call/tool_result hooks
- * manually — AgentSession 0.83's beforeToolCall/afterToolCall handles that.
+ * manually — AgentSession's beforeToolCall/afterToolCall handles that.
  * The mock only replaces execute() to return controlled values. Result
  * recording is handled by the session subscriber from tool_execution_end
  * events (which carry the final afterToolCall-modified result).
  *
  * Returns a Set of mocked tool names for the session subscriber to set the
  * mocked flag on recorded results, plus a Set of toolCallIds whose mock
- * returned a ToolResult with isError:true. Pi 0.84's agent loop hardcodes
- * successful execute() as non-error (isError:false), so the subscriber must
- * consult this set to preserve the mock's error intent in collected records.
+ * returned a ToolResult with isError:true. The wrapper returns content/details
+ * to Pi, so the subscriber preserves the mock's error intent in collected records.
  */
 export function interceptToolExecution(
 	tools: AgentTool[],
@@ -120,8 +119,7 @@ export function interceptToolExecution(
 					.map((c) => c.text)
 					.join("\n");
 				if (result.isError) {
-					// Pi 0.84 hardcodes successful execute() as non-error; remember the
-					// toolCallId so the session subscriber can flag the record.
+					// Keep the mock's error intent available to the session subscriber.
 					mockedErrorToolCallIds.add(toolCallId);
 				}
 				// fireThenCallback fires synchronously so .then() sees real data

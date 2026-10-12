@@ -2,7 +2,7 @@
 
 Test harness for [pi](https://github.com/earendil-works/pi-coding-agent) extensions — in-process session testing with playbook-driven model mocking, package install verification, and subprocess mocking.
 
-**Pi 0.85.x only.** This fork targets Pi 0.85 and requires `@earendil-works/pi-agent-core@^0.85.0`, `@earendil-works/pi-ai@^0.85.0`, and `@earendil-works/pi-coding-agent@^0.85.0`.
+**Pi 1.1.x only.** Harness 0.9.0 requires `@earendil-works/pi-agent-core@~1.1.0`, `@earendil-works/pi-ai@~1.1.0`, and `@earendil-works/pi-coding-agent@~1.1.0`. Its public API is unchanged. Older Pi lines are no longer supported by this release.
 
 ## Why
 
@@ -24,9 +24,9 @@ The repository and published package include the canonical `pi-test-harness` ski
 
 ### Peer dependencies
 
-- `@earendil-works/pi-coding-agent` ^0.85.0
-- `@earendil-works/pi-ai` ^0.85.0
-- `@earendil-works/pi-agent-core` ^0.85.0
+- `@earendil-works/pi-coding-agent` ~1.1.0
+- `@earendil-works/pi-ai` ~1.1.0
+- `@earendil-works/pi-agent-core` ~1.1.0
 
 ### Supported Pi line
 
@@ -34,12 +34,13 @@ The harness version and the Pi version are independent tracks — do not compare
 
 | Harness | Supported Pi | Notes                                                    |
 | ------- | ------------ | -------------------------------------------------------- |
+| 0.9.x   | 1.1.x        | Request-time interception and Node/Bun artifact qualification |
 | 0.8.x   | 0.85.x       | Loader parity for top-level-await entrypoints            |
 | 0.7.x   | 0.84.x       | Pi 0.84 support                                          |
 
 ### Ways to install it
 
-1. **From npm (normal case):** `npm install --save-dev @abdwhb-png/pi-test-harness@0.8.0`. This is the packed artifact a stranger receives.
+1. **From npm (after publication):** `sfw npm install --save-dev @abdwhb-png/pi-test-harness@0.9.0`. This is the packed artifact a consumer receives.
 2. **Pre-release:** changes that need testing before a final version are published under the `next` dist-tag, so `npm install --save-dev @abdwhb-png/pi-test-harness@next` picks one up without inventing a `0.x` release.
 3. **Local checkout (harness development):** `bun link` in the harness repo, then `bun link @abdwhb-png/pi-test-harness` in the consumer, or point the dependency at a `file:` path. Consumers read `dist/`, so run `npm run build` after editing `src/`, and never commit a lockfile that resolves to the link.
 
@@ -112,7 +113,7 @@ Three substitution points at the boundary — everything else runs through pi's 
 | `tool.execute()` | Mock handler | Controls what tools "return" |
 | `ctx.ui.*` | Mock UI | Controls what the user "answers" |
 
-**Hook pipeline.** Pi 0.84 AgentSession installs `beforeToolCall`/`afterToolCall` on the Agent, which drive extension `tool_call`/`tool_result` events. The harness mock does **not** re-emit these hooks — each fires exactly once per tool call. Tool result modification via `tool_result` hook return values works because the session subscriber reads the finalized result from the `tool_execution_end` event.
+**Request and hook pipeline.** Pi 1.1 rebuilds its executable tool registry while preparing each model request. During `run()`, the harness composes with `Agent.prepareRequest`, wraps the tools from the prepared context, and preserves the callback's other updates. The previous callback is restored in `finally`, including after a failed run. AgentSession owns `beforeToolCall`/`afterToolCall`, which drive extension `tool_call`/`tool_result` events exactly once. The harness does not re-emit them. The session subscriber records the finalized `tool_execution_end` result, including hook modifications.
 
 **ModelRuntime isolation.** The session creates an isolated `ModelRuntime` with `authPath` under the working directory and `modelsPath: null`. No credentials file is read from `~/.pi/agent`. A dummy API key is injected to satisfy AgentSession auth checks (the model is never called).
 
@@ -249,7 +250,7 @@ mockUI: {
 
 **Defaults** (when no mock config is provided): `confirm → true`, `select → first item`, `input → ""`, `editor → ""`.
 
-The mock UI context implements the full Pi 0.84 `ExtensionUIContext` interface, including `setWorkingVisible`, `setWorkingIndicator`, `setHiddenThinkingLabel`, `addAutocompleteProvider`, and `getEditorComponent` (returns `undefined`). All calls are logged in `t.events.ui`.
+The mock UI context implements the Pi 1.1 `ExtensionUIContext` interface, including `setWorkingVisible`, `setWorkingIndicator`, `setHiddenThinkingLabel`, `addAutocompleteProvider`, and `getEditorComponent` (returns `undefined`). All calls are logged in `t.events.ui`.
 
 ## Event Collection
 
@@ -536,7 +537,7 @@ interface MockUIConfig {
 
 ### `ToolBlockedError`
 
-Kept for backward compatibility. In Pi 0.84, tool blocking is handled by AgentSession's `beforeToolCall` before `execute()` is reached, so `ToolBlockedError` is no longer thrown by the mock flow. It remains exported for instanceof checks on errors from event callbacks:
+Kept for backward compatibility. In Pi 1.1, tool blocking is handled by AgentSession's `beforeToolCall` before `execute()` is reached, so `ToolBlockedError` is not thrown by the normal mock flow. It remains exported for instanceof checks on errors from event callbacks:
 
 ```typescript
 import { ToolBlockedError } from "@abdwhb-png/pi-test-harness";
@@ -602,7 +603,7 @@ describe("pi-planner", () => {
 
 ### Windows + SQLite (EPERM in afterEach)
 
-`session.dispose()` does **not** fire `session_shutdown`. That event fires at Node.js process exit. Extensions that open SQLite databases in `session_start` (e.g., brainiac, memory extensions) keep those files locked for the entire test runner lifetime.
+`session.dispose()` does **not** fire `session_shutdown`. Pi emits that event at lifecycle boundaries such as reload and CLI shutdown. Extensions that rely on shutdown hooks to close SQLite databases can keep those files locked until reload or process shutdown.
 
 On Windows, this means `rmSync(dbPath)` in `afterEach` throws `EPERM`. Use `safeRmSync` instead:
 
@@ -618,7 +619,7 @@ afterEach(() => {
 });
 ```
 
-Files are cleaned by the OS when the process exits. Use unique DB paths per test (e.g., `mkdtempSync` + test name) for isolation.
+Open file handles are released when the process exits. Use unique DB paths per test (e.g., `mkdtempSync` + test name) for isolation.
 
 `safeRmSync` only swallows `EPERM` and `EBUSY` — all other errors still propagate.
 
@@ -638,27 +639,33 @@ Only the LLM boundary is replaced — because that's the one thing you **can't**
 
 CI runs in three stages:
 
-1. **Verify** on Linux/Node 24: lint, typecheck, unit tests, build, audit (`sfw npm audit`), and a packed-consumer import smoke test (`sfw npm install` with the peers declared in `package.json`).
-2. **Integration matrix** after verify passes: Linux + Windows, Node 22 + 24, Pi 0.85.x (locked by `devDependencies`).
-3. **Extension loading under Bun** after verify passes: Linux, Bun 1.3.14, running the path-loaded extension cases (`npm run test:bun`). Bun enables jiti's native import fast-path, so this is the only runner that catches a regression in top-level-await entrypoint loading.
+1. **Verify** on Linux/Node 24: lint, typecheck, unit tests, build, audit (`sfw npm audit`), and the installed-consumer smoke (`npm run test:consumer`).
+2. **Integration matrix** after verify passes: Linux + Windows, Node 22 + 24, Pi 1.1.0 (locked by `devDependencies`).
+3. **Bun qualification** after verify passes: Linux, Bun 1.3.14, path-loaded extension cases (`npm run test:bun`), build, and the installed-consumer smoke (`npm run test:consumer -- --runtime=bun`). Bun's extension-loading cases cover the top-level-await regression that the Node runner cannot reproduce.
+
+The consumer smoke installs the root npm tarball and the minimal `dist/package.tgz` independently through Socket Firewall. Exact peer versions come from `devDependencies`, rather than resolving an unspecified new patch from the peer ranges. The same scenario checks package metadata, declarations, the bundled skill, runtime identity, real and mocked tools, single hook emission, hook result modifications, refusal before mock execution, consecutive runs, and callback restoration after success and failure. Session execution rejects unexpected fetch requests and makes no LLM calls.
+
+For nested npm installs, the sandbox and consumer smoke remove `npm run`'s exported `allow-scripts` environment value so npm 12 reads the policy from its configuration files. Other environment settings and direct invocation options are preserved. This does not modify personal npm configuration or bypass Socket Firewall.
 
 The unit suite covers the playbook DSL and subprocess `createMockPi()` shim. The integration suite covers real in-process Pi sessions, extension loading, tool registration/execution, hooks, UI mocking, sandbox package install verification, regression cases, and Windows-safe cleanup behavior.
 
 Known intentional gaps:
 
 - No real LLM/provider calls; the harness replaces the model boundary by design.
-- No compatibility testing for the deprecated `@mariozechner/*` Pi packages or Pi <0.85.0.
+- No compatibility testing for the deprecated `@mariozechner/*` Pi packages or Pi outside 1.1.x. The qualification baseline is pinned to Pi 1.1.0.
 - Concurrent/parallel tool execution is not yet deeply exercised. Today the playbook emits one tool call per assistant message, which is deterministic and good for most extension tests. To test true Pi parallelism, the harness should grow a grouped/batched call action that emits multiple `toolCall` blocks in one assistant message, then assert result collection by `toolCallId` rather than completion order.
-- Edge cases still worth adding over time: command/input/before-agent hooks, tool-result hook mutation, multiple extensions interacting, install failure modes, malformed package metadata, ESM/CJS fixture packages, cleanup failure paths, and concurrent `createMockPi()` subprocess consumers.
+- Native MCP/codemode workflows and concurrent `createMockPi()` subprocess consumers are not qualified by this release.
 
 ## Releasing
 
 Releases are driven by [changesets](https://github.com/changesets/changesets) and published from CI with npm Trusted Publishing (OIDC) — the repository holds no `NPM_TOKEN`.
 
-1. Add a changeset for the change (`npx changeset`) and merge it alongside the work.
+1. Add a changeset for the change (`npm exec --no -- changeset`) and merge it alongside the work.
 2. Run the **Release** workflow (`workflow_dispatch`) on `main` — the base branch changesets reads. With pending changesets it opens a `chore: version packages` PR carrying the version bump and the changelog.
 3. Merge that PR, then run the workflow again: nothing is left to version, so it publishes to npm, creates the `v<version>` tag, and creates the GitHub Release from that version's changelog entry.
 4. changesets additionally tags `<pkg>@<version>`; the human-facing ref is `v<version>`.
+
+For a release prepared locally, apply its pending changeset with `npm exec --no -- changeset version`, then synchronize the npm lockfile and qualify the resulting artifacts. Once that version commit has passed CI and publication is explicitly authorized, the manual Release workflow can publish it without an intermediate version PR. Local qualification does not publish or install the package into a daily Pi runtime.
 
 One-time prerequisite: on npmjs.com, the package's trusted publisher must name this repository and the `release` workflow. A local `npm publish` still works as a manual escape hatch, but it carries no provenance.
 

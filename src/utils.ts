@@ -9,9 +9,9 @@ import { rmSync } from "node:fs";
  *
  * **Why this exists**: On Windows, pi extensions that open SQLite databases
  * do so in the `session_start` event handler. The corresponding close happens
- * in `session_shutdown` — but that event fires at Node.js **process exit**,
- * NOT when `session.dispose()` is called. This means DB files remain locked
- * for the lifetime of the test runner process.
+ * in `session_shutdown`, which is not emitted by `session.dispose()`.
+ * Resources closed only by that hook can remain locked until reload or CLI
+ * shutdown.
  *
  * Safe pattern in afterEach:
  * ```ts
@@ -22,7 +22,7 @@ import { rmSync } from "node:fs";
  * });
  * ```
  *
- * Files are cleaned up by the OS when the process exits (or on next run).
+ * Open file handles are released when the process exits.
  * Using unique DB paths per test ensures isolation.
  */
 /**

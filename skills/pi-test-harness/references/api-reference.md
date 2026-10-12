@@ -1,6 +1,6 @@
 # API reference
 
-Type definitions and the event-collection API for `@abdwhb-png/pi-test-harness` v0.7.0 (Pi 0.85.x). Use this as a reference when authoring assertions or tracing through snippets.
+Type definitions and the event-collection API for `@abdwhb-png/pi-test-harness` v0.9.0 (Pi 1.1.x). Use this as a reference when authoring assertions or tracing through snippets.
 
 ## Table of contents
 
@@ -134,7 +134,7 @@ If `remaining > 0`, the harness will also throw a diagnostic — see "Playbook n
 
 ### `dispose()`
 
-Cleans up the session resources and (if auto-generated) the temp `cwd`. Always call in `afterEach`. Note that `dispose()` does **not** fire `session_shutdown` — that event fires on process exit. See `safeRmSync` for why this matters on Windows.
+Cleans up the session resources and (if auto-generated) the temp `cwd`. Always call in `afterEach`. Note that `dispose()` does **not** fire `session_shutdown` — Pi emits that event during reload or CLI shutdown. See `safeRmSync` for why this matters on Windows.
 
 ---
 
@@ -205,7 +205,7 @@ interface ToolCallRecord {
 }
 ```
 
-**Source**: verified against `dist/types.d.ts` in v0.7.0. Note the field is `input` (not `params`); it carries the params you passed via `calls(tool, params)`. There is no `toolCallId` on `ToolCallRecord` — pair with results by index (e.g. `toolCallsFor(name)[i]` ↔ `toolResultsFor(name)[i]`) since both arrays are in call order.
+**Source**: verified against `dist/types.d.ts` in v0.9.0. Note the field is `input` (not `params`); it carries the params you passed via `calls(tool, params)`. There is no `toolCallId` on `ToolCallRecord` — pair with results by index (e.g. `toolCallsFor(name)[i]` ↔ `toolResultsFor(name)[i]`) since both arrays are in call order.
 
 ### Reading it
 
@@ -266,7 +266,7 @@ interface ToolResultRecord {
 }
 ```
 
-**Source**: verified against `dist/types.d.ts` in v0.7.0.
+**Source**: verified against `dist/types.d.ts` in v0.9.0.
 
 ### Reading it
 
@@ -300,7 +300,7 @@ interface UICallRecord {
 }
 ```
 
-**Source**: verified against `dist/types.d.ts` in v0.7.0. `notify` calls are recorded here too — `returnValue` is typically omitted for outbound methods.
+**Source**: verified against `dist/types.d.ts` in v0.9.0. `notify` calls are recorded here too — `returnValue` is typically omitted for outbound methods.
 
 ### Reading it
 
@@ -433,7 +433,7 @@ interface MockPi {
 
 ## `ToolBlockedError`
 
-Exported for source compatibility with upstream consumers, but **not promised** by normal Pi 0.84 runs through `AgentSession`. The canonical block signal is the event records: `blocked: true`/`blockReason` on the `ToolCallRecord` and `isError: true` + result text on the `ToolResultRecord` — assert those instead.
+Exported for source compatibility with upstream consumers, but **not promised** by normal Pi 1.1 runs through `AgentSession`. The canonical block signal is the event records: `blocked: true`/`blockReason` on the `ToolCallRecord` and `isError: true` + result text on the `ToolResultRecord` — assert those instead.
 
 ```typescript
 import {
@@ -450,7 +450,7 @@ const result = t.events.toolResultsFor("bash")[0];
 expect(result.isError).toBe(true);
 ```
 
-Do not rely on `instanceof ToolBlockedError` to detect a hook block from a normal Pi 0.84 run. See `mock-tools.md` for the event-assertion patterns.
+Do not rely on `instanceof ToolBlockedError` to detect a hook block from a normal Pi 1.1 run. See `mock-tools.md` for the event-assertion patterns.
 
 ---
 
@@ -462,7 +462,7 @@ function safeRmSync(filePath: string): void;
 
 Removes a file, swallowing `EPERM` and `EBUSY` errors only. All other errors propagate.
 
-Use it in `afterEach` on Windows when an extension opened a SQLite database in `session_start` (memory, brainiac, etc.) and `session.dispose()` doesn't release the file lock (because `session_shutdown` only fires on process exit).
+Use it in `afterEach` on Windows when an extension opened a SQLite database in `session_start` (memory, brainiac, etc.) and `session.dispose()` doesn't release the file lock (because `session_shutdown` is not emitted by `dispose()`).
 
 ```typescript
 import { safeRmSync } from "@abdwhb-png/pi-test-harness";
