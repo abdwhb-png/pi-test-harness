@@ -11,12 +11,6 @@ if (runtime !== "node" && runtime !== "bun") {
 	throw new Error(`Unsupported consumer runtime: ${runtime}. Use node or bun.`);
 }
 
-try {
-	execFileSync("sfw", ["--version"], { encoding: "utf8", stdio: "pipe" });
-} catch (err) {
-	throw new Error("Socket Firewall is required for consumer installation", { cause: err });
-}
-
 const root = resolve(import.meta.dirname, "..");
 const { name: packageName, version, peerDependencies, devDependencies } = JSON.parse(
 	readFileSync(join(root, "package.json"), "utf8"),
@@ -35,11 +29,18 @@ const minimalTarball = join(root, "dist", "package.tgz");
 if (!existsSync(minimalTarball)) {
 	throw new Error("dist/package.tgz not found — run npm run build first");
 }
-const { _npmSubprocessEnv } = await import("../dist/sandbox.js");
+const { _npmSubprocessEnv, _resolveExecutable, _spawnTarget } = await import("../dist/sandbox.js");
+try {
+	const target = _spawnTarget(_resolveExecutable("sfw"), ["--version"]);
+	execFileSync(target.command, target.args, { encoding: "utf8", stdio: "pipe" });
+} catch (err) {
+	throw new Error("Socket Firewall is required for consumer installation", { cause: err });
+}
 const smokeDir = mkdtempSync(join(tmpdir(), "pi-test-harness-consumer-"));
 
 try {
-	const packResult = JSON.parse(execFileSync("npm", ["pack", "--json", "--pack-destination", smokeDir], {
+	const packTarget = _spawnTarget(_resolveExecutable("npm"), ["pack", "--json", "--pack-destination", smokeDir]);
+	const packResult = JSON.parse(execFileSync(packTarget.command, packTarget.args, {
 		cwd: root,
 		encoding: "utf8",
 		env: _npmSubprocessEnv(),
@@ -56,7 +57,8 @@ try {
 		const consumerDir = mkdtempSync(join(smokeDir, "installed-"));
 		writeFileSync(join(consumerDir, "package.json"), JSON.stringify({ type: "module", private: true }, null, 2));
 		console.log(`Installing ${artifact} + exact peers via sfw (${peerSpecs.join(", ")})...`);
-		execFileSync("sfw", ["npm", "install", "--save-exact", tarball, ...peerSpecs], {
+		const installTarget = _spawnTarget(_resolveExecutable("sfw"), ["npm", "install", "--save-exact", tarball, ...peerSpecs]);
+		execFileSync(installTarget.command, installTarget.args, {
 			cwd: consumerDir,
 			stdio: "inherit",
 			env: _npmSubprocessEnv(),
