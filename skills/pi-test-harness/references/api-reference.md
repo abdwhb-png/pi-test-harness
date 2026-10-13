@@ -12,6 +12,7 @@ Type definitions and the event-collection API for `@abdwhb-png/pi-test-harness` 
     - [`run(...turns)`](#runturns)
     - [`events`](#events)
     - [`playbook`](#playbook)
+    - [`close()`](#close)
     - [`dispose()`](#dispose)
   - [`TestEvents`](#testevents)
     - [Method cheatsheet](#method-cheatsheet)
@@ -133,9 +134,21 @@ After `run()`, you can inspect how much of the script was consumed:
 
 If `remaining > 0`, the harness will also throw a diagnostic — see "Playbook not fully consumed" in `playbook-dsl.md`. This field is mostly useful for debugging mid-test where you'd want to assert `remaining === 0`.
 
+### `close()`
+
+Use `await t.close()` in teardown, especially for native MCP/codemode sessions. It prevents pending prompts and later turns from starting, settles an active run, restores interception and awaits native `session_shutdown` before deleting an owned temporary `cwd`. A supplied `cwd` is preserved. Repeated calls, including calls from abort listeners, share one promise and one shutdown.
+
+```typescript
+afterEach(async () => {
+  await t?.close();
+});
+```
+
+On Windows, await shutdown before deleting caller-owned files. `safeRmSync` can ignore `EPERM`/`EBUSY`, but it cannot release resource handles or replace shutdown.
+
 ### `dispose()`
 
-Cleans up the session resources and (if auto-generated) the temp `cwd`. Always call in `afterEach`. Note that `dispose()` does **not** fire `session_shutdown` — Pi emits that event during reload or CLI shutdown. See `safeRmSync` for why this matters on Windows.
+Legacy synchronous cleanup of the session and an owned temporary `cwd`. It does **not** emit `session_shutdown` and can leave resources owned by shutdown hooks open. Prefer `close()` for native workflows. Calling `close()` after `dispose()` rejects because the native extension context has already been invalidated.
 
 ---
 

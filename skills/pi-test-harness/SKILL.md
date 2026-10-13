@@ -18,7 +18,7 @@ metadata:
 
 `@abdwhb-png/pi-test-harness` is a maintained fork of Marc Fargas' MIT-licensed [pi-test-harness](https://github.com/marcfargas/pi-test-harness) for [Pi](https://github.com/earendil-works/pi-coding-agent) extensions, targeting **Pi 1.1.x only**. It keeps the upstream API and credits Marc Fargas' original work (pi-powershell, pi-tramp, pi-planner, etc.; note that pi itself is maintained by Mario Zechner / earendil-works, not the same person). Its job: let you exercise **real** extension code paths (tool registration, hooks, session events, UI prompts) in any test runner with zero LLM calls and full determinism.
 
-> **Verify before use**: this skill snapshots the fork README as of harness v0.9.0 (Pi 1.1.x). If the API ends up looking subtly different, re-fetch the README from <https://github.com/abdwhb-png/pi-test-harness> before trusting any snippet here. Note: the harness version (e.g. `0.9.0`) and the Pi version (e.g. `1.1.x`) are **independent release tracks** — do not compare them numerically.
+> **Verify before use**: the existing harness guidance uses v0.9.0 (Pi 1.1.x) as its release baseline. The native MCP/codemode section describes additions in the development checkout for the next minor release, not published 0.9.0. Match the README and installed package version before using a snippet. Note: the harness version (e.g. `0.9.0`) and the Pi version (e.g. `1.1.x`) are **independent release tracks** — do not compare them numerically.
 
 ## The mental model: "let pi be pi"
 
@@ -407,7 +407,7 @@ Pi's `tool_call` / `tool_result` hooks **do** fire for mocked tools through `Age
 `createMockPi` replaces only the `pi` executable. Load or import the real extension code that spawns it; never paste a local copy of the subprocess helper into the test, because that can pass while the extension is broken.
 
 **6. Trusting the snapshot blindly.**
-The `description` and code in this skill are pinned to fork v0.9.0 (Pi 1.1.x). On any minor bump, re-fetch the fork README and reconcile before trusting snippets.
+The release baseline is v0.9.0 (Pi 1.1.x), while the native MCP/codemode section describes the development checkout. Before using those additions, confirm that the installed artifact includes them. On a version bump, reconcile the skill with the matching README and package metadata.
 
 ## Test-layer summary
 

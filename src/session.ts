@@ -256,7 +256,12 @@ export async function createTestSession(
 				for (const turn of turns) {
 					if (closePromise) break;
 					currentStep = state.consumed;
-					await session.prompt(turn.prompt);
+					await session.prompt(turn.prompt, {
+						preflightResult(disposition) {
+							// Pi reports this after async preflight and before starting the agent.
+							if (disposition === "started" && closePromise) throw new Error("Test session is closed");
+						},
+					});
 					await session.agent.waitForIdle();
 				}
 
@@ -279,13 +284,14 @@ export async function createTestSession(
 		close(): Promise<void> {
 			if (closePromise) return closePromise;
 			if (disposed) return Promise.reject(new Error("Test session was disposed before close()"));
-			closePromise = (async () => {
+			// Publish the shared promise before abort dispatches synchronous listeners.
+			closePromise = Promise.resolve().then(async () => {
 				await session.abort();
 				await runSettled;
 				await runtime.dispose();
 				disposed = true;
 				if (ownsTmpDir) fs.rmSync(cwd, { recursive: true, force: true });
-			})();
+			});
 			return closePromise;
 		},
 

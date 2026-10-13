@@ -70,6 +70,42 @@ describe("native codemode", () => {
 });
 
 describe("native shutdown", () => {
+	it.each(["input", "before_agent_start"] as const)("prevents execution when closing during %s", async hook => {
+		let entered!: () => void;
+		const pending = new Promise<void>(resolve => { entered = resolve; });
+		let release!: () => void;
+		const gate = new Promise<void>(resolve => { release = resolve; });
+		let executions = 0;
+		let shutdowns = 0;
+		let restoredAtShutdown = false;
+		const t = await createTestSession({ extensionFactories: [(pi: ExtensionAPI) => {
+			const preflight = async () => { entered(); await gate; };
+			if (hook === "input") pi.on("input", preflight);
+			else pi.on("before_agent_start", preflight);
+			pi.registerTool({ name: "probe", label: "Probe", description: "Observe execution after preflight", parameters: Type.Object({}),
+				execute: async () => { executions++; return { content: [{ type: "text", text: "executed" }], details: {} }; },
+			});
+			pi.on("session_shutdown", () => {
+				shutdowns++;
+				restoredAtShutdown = t.session.agent.prepareRequest === prepare && t.session.extensionRunner!.emitToolCall === emitToolCall;
+			});
+		}] });
+		const prepare = t.session.agent.prepareRequest;
+		const emitToolCall = t.session.extensionRunner!.emitToolCall;
+		const outcome = t.run(when("Pending prompt", [calls("probe"), says("Done.")])).catch(error => error);
+		try {
+			await pending;
+			const closing = t.close();
+			release();
+			await closing;
+			expect(executions).toBe(0);
+			expect(await outcome).toBeInstanceOf(Error);
+			expect(restoredAtShutdown).toBe(true);
+			expect(shutdowns).toBe(1);
+			expect(existsSync(t.cwd)).toBe(false);
+		} finally { release(); await t.close(); await outcome; }
+	});
+
 	it("awaits shutdown before removing owned state and closes once", async () => {
 		let shutdowns = 0;
 		let stateExistsDuringShutdown = false;
@@ -124,6 +160,35 @@ describe("native shutdown", () => {
 			expect(aborted).toBe(true);
 			expect(laterExecutions).toBe(0);
 		} finally { await t.close(); }
+	});
+
+	it("shares one shutdown when an abort listener re-enters close", async () => {
+		let started!: () => void;
+		const pending = new Promise<void>(resolve => { started = resolve; });
+		let nestedClose: Promise<void> | undefined;
+		let shutdowns = 0;
+		const t = await createTestSession({ extensionFactories: [(pi: ExtensionAPI) => {
+			pi.registerTool({ name: "wait", label: "Wait", description: "Re-enter cleanup on cancellation", parameters: Type.Object({}),
+				execute: async (_id, _args, signal) => {
+					await new Promise<void>(resolve => {
+						signal!.addEventListener("abort", () => { nestedClose = t.close(); resolve(); }, { once: true });
+						started();
+					});
+					return { content: [{ type: "text", text: "aborted" }], details: {} };
+				},
+			});
+			pi.on("session_shutdown", () => { shutdowns++; });
+		}] });
+		const outcome = t.run(when("Wait", [calls("wait"), says("Done.")])).catch(error => error);
+		try {
+			await pending;
+			const closing = t.close();
+			await Promise.all([closing, nestedClose]);
+			expect(shutdowns).toBe(1);
+			expect(nestedClose).toBe(closing);
+			expect(t.close()).toBe(closing);
+			expect(existsSync(t.cwd)).toBe(false);
+		} finally { await t.close(); await outcome; }
 	});
 
 	it("rejects asynchronous close after legacy disposal", async () => {
