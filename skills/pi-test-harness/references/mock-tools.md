@@ -10,7 +10,7 @@
 type MockToolHandler =
   | string                                                        // 1. static text
   | ToolResult                                                    // 2. full result object
-  | ((params: Record<string, unknown>) => string | ToolResult);   // 3. dynamic function
+  | ((params: Record<string, unknown>) => string | ToolResult | Promise<string | ToolResult>);   // 3. dynamic function
 ```
 
 ### 1. Static string
@@ -174,3 +174,7 @@ Regardless of `propagateErrors`, the call record carries `blocked: true` and `bl
 - **Listing your extension's own tool in `mockTools`**. If you do, your tool's `execute()` never runs and you're testing nothing. Remove it.
 - **Expecting `calls(...)` to throw `ToolBlockedError` on a block**. Normal Pi 1.1 runs do not promise that throw; assert the canonical event records (`blocked`, `blockReason`, `isError`, result text) instead. If you want the playbook to keep flowing, set `propagateErrors: false` and read `.isError`.
 - **Mocking a tool the extension doesn't actually call**. The mock is harmless but adds noise; trim the list to what the test exercises.
+
+## Native nested calls
+
+The same execution replacement applies to direct and codemode nested calls, including tools registered during MCP discovery. Native argument validation and hooks still run. Definitions and `prepareRequest` are restored after each run. `structuredContent` and `isError` are preserved, including asynchronous handler results. Results modified by hooks are recorded from Pi's final event. A call refused before execution has `mocked: false`, even when its tool appears in `mockTools`.

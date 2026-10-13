@@ -55,14 +55,16 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ __tests__/ scripts/consumer-smoke.mjs scripts/consumer-scenario.mjs scripts/release-summary.mjs",
     "test:unit": "vitest run __tests__/playbook.test.ts __tests__/mock-pi.test.ts __tests__/resolve-executable.test.ts __tests__/release-workflow.test.ts",
-    "test:integration": "vitest run __tests__/integration.test.ts __tests__/extension-loading.test.ts __tests__/sandbox.test.ts __tests__/fixes.test.ts __tests__/pi-11-compat.test.ts __tests__/prepare-package.test.ts",
+    "test:integration": "vitest run __tests__/integration.test.ts __tests__/extension-loading.test.ts __tests__/sandbox.test.ts __tests__/fixes.test.ts __tests__/pi-11-compat.test.ts __tests__/prepare-package.test.ts __tests__/native.test.ts __tests__/mcp-fixture.test.ts",
     "test:bun": "bun test --isolate scripts/extension-loading-smoke.test.ts",
     "test:consumer": "node scripts/consumer-smoke.mjs"
   },
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "~1.1.0",
     "@earendil-works/pi-ai": "~1.1.0",
-    "@earendil-works/pi-coding-agent": "~1.1.0"
+    "@earendil-works/pi-codemode": "~1.1.0",
+    "@earendil-works/pi-coding-agent": "~1.1.0",
+    "@earendil-works/pi-mcp": "~1.1.0"
   },
   "overrides": {
     "read-yaml-file": "2.1.0"
@@ -72,7 +74,9 @@
     "@changesets/cli": "3.0.3",
     "@earendil-works/pi-agent-core": "1.1.0",
     "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-codemode": "1.1.0",
     "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-mcp": "1.1.0",
     "@eslint/js": "10.0.1",
     "eslint": "10.8.0",
     "globals": "^16.1.0",

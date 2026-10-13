@@ -120,7 +120,7 @@ jobs:
       - run: npm run test:consumer -- --runtime=bun
 
   integration:
-    name: Integration (${{ matrix.os }}, Node ${{ matrix.node-version }})
+    name: Integration and packed consumers (${{ matrix.os }}, Node ${{ matrix.node-version }})
     needs: verify
     runs-on: ${{ matrix.os }}
     strategy:
@@ -168,3 +168,4 @@ jobs:
       - run: sfw npm ci
       - run: npm run build
       - run: npm run test:integration
+      - run: npm run test:consumer

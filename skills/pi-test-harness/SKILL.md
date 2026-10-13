@@ -373,42 +373,35 @@ Lifecycle: `install()` → `onCall(...)` (queue N responses) → `reset()` (clea
 
 The key-validation behavior (throws on typos like `{ ouptut: ... }`), the concurrency caveat (serial spawns only — queued responses are consumed FIFO across spawned subprocesses), and the safety features (exit handler auto-restores PATH; 30s timeout) are documented in `references/mock-pi-cli.md`.
 
-## Windows + SQLite: use `safeRmSync` in `afterEach`
+## Native MCP/codemode and asynchronous cleanup
 
-This is the single biggest Windows footgun, and it always bites users who haven't seen it before. `session.dispose()` does **not** fire `session_shutdown`; the CLI emits it during shutdown, and Pi also emits it during reload. Extensions that rely on shutdown hooks to close SQLite databases can keep those files locked until reload or process shutdown.
+The development checkout adds native workflows for the next minor release. Published 0.9.0 does not include them. Compose `createCodemodeExtension({ models: false })`, `createMcpExtension(fixture.extensionOptions)` and optionally `createToolSearchExtension()` explicitly in `extensionFactories`. Use `createMcpFixture()` for native tool schemas and deterministic external responses. The [README native example](../../README.md#native-mcpcodemode) documents the complete composition and error response forms.
 
-On Windows, `rmSync(dbPath)` in `afterEach` will throw `EPERM` because the file is still locked. Use the bundled `safeRmSync` instead, which swallows only `EPERM`/`EBUSY`:
+Native observations retain `toolCallId`, `parentToolCallId` and `structuredContent`. Native MCP structured results contain the MCP response envelope. `mocked` reflects actual handler execution for direct and nested calls. Fixture responses are not `mockTools` replacements. IDs are scoped to a run, and overlapping runs reject.
+
+Always use `await t.close()` for native workflows. It settles execution, awaits Pi shutdown and removes only an owned temporary directory. Check `fixture.closed` after teardown. `dispose()` remains legacy synchronous cleanup without shutdown hooks, and `close()` after `dispose()` rejects. For caller-owned files, clean up after `close()`. `safeRmSync` only suppresses `EPERM`/`EBUSY` and cannot close a resource.
 
 ```typescript
-import { safeRmSync } from "@abdwhb-png/pi-test-harness";
-
-let dbPath: string;
-
-afterEach(() => {
-  t?.dispose();                 // dispose session first
-  safeRmSync(dbPath);
-  safeRmSync(dbPath + "-wal");
-  safeRmSync(dbPath + "-shm");
+afterEach(async () => {
+  await t?.close();
 });
 ```
 
-Open file handles are released when the test process exits. For isolation across tests, give each one a unique DB path (typically `mkdtempSync` + the test name).
-
-`safeRmSync` only suppresses `EPERM` and `EBUSY` — every other error still propagates.
+Only in-memory native MCP/codemode core flows are qualified. Third-party package workflows, real transports, OAuth, `models.*`, resources and reconnection are excluded. Windows CI must pass before publication.
 
 ## Common pitfalls / anti-patterns
 
 **1. Mocking your own extension's tools.**
 If your extension registers a tool named `my_tool`, don't also put `my_tool` in `mockTools`. The mock intercepts `tool.execute()` and your tool's real logic never runs — the test passes vacuously. Mock **built-in** tools (`bash`, `read`, `write`, `edit`); let your extension's own tools execute for real.
 
-**2. Forgetting `afterEach(() => t?.dispose())`.**
-Pi extensions that open a SQLite DB (memory extensions, etc.) keep the file handle for the test process's lifetime. Skipping `dispose()` + `safeRmSync()` causes cross-test contamination and `EPERM` on Windows. See the "Windows + SQLite" section.
+**2. Forgetting asynchronous cleanup.**
+Pi extensions that open a SQLite DB (memory extensions, etc.) keep the file handle for the test process's lifetime. Use `await t.close()` before deleting caller-owned files. Verify resource closure when handles matter.
 
 **3. Mocking a tool that an extension hook will block.**
 When your hook blocks a call (plan mode, dangerous command), the mock handler never executes. Assert the block via the event records — `blocked: true`/`blockReason` on the `ToolCallRecord` and `isError: true` on the `ToolResultRecord` — rather than expecting a `ToolBlockedError` throw from normal Pi 1.1 runs.
 
 **4. Assuming hooks fire on the mock path.**
-Pi's `tool_call` / `tool_result` hooks **do** fire for mocked tools through `AgentSession`'s hook pipeline, but lifecycle hooks (`session_start`, `session_shutdown`) follow Pi's normal timing. `dispose()` does not emit `session_shutdown`. Pi emits it at lifecycle boundaries such as reload or CLI shutdown. Plan accordingly.
+Pi's `tool_call` / `tool_result` hooks **do** fire for mocked tools through `AgentSession`'s hook pipeline, but lifecycle hooks (`session_start`, `session_shutdown`) follow Pi's normal timing. `close()` awaits native `session_shutdown`; `dispose()` does not emit it.
 
 **5. Reimplementing extension logic inside the test.**
 `createMockPi` replaces only the `pi` executable. Load or import the real extension code that spawns it; never paste a local copy of the subprocess helper into the test, because that can pass while the extension is broken.
@@ -437,6 +430,8 @@ Peer dependencies (Pi line `1.1.x` only):
 - `@earendil-works/pi-coding-agent` ~1.1.0
 - `@earendil-works/pi-ai` ~1.1.0
 - `@earendil-works/pi-agent-core` ~1.1.0
+- `@earendil-works/pi-codemode` ~1.1.0
+- `@earendil-works/pi-mcp` ~1.1.0 (native MCP fixture)
 
 ## Reference index
 

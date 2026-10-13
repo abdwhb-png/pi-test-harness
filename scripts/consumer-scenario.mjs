@@ -32,7 +32,7 @@ globalThis.fetch = () => {
 let t;
 try {
 	const harness = await import(packageName);
-	for (const name of ["createMockPi", "createTestSession", "verifySandboxInstall", "when", "calls", "says", "ToolBlockedError", "safeRmSync"]) {
+	for (const name of ["createMockPi", "createTestSession", "createMcpFixture", "verifySandboxInstall", "when", "calls", "says", "ToolBlockedError", "safeRmSync"]) {
 		assert.equal(typeof harness[name], "function", `Missing public export: ${name}`);
 	}
 	const { createTestSession, when, calls, says } = harness;
@@ -114,9 +114,65 @@ try {
 	assert.deepEqual(t.playbook, { consumed: 2, remaining: 0 });
 	assert.equal(networkRequests, 0);
 	console.log("session: tools, hooks, policy refusal, callback restoration, and recovery OK");
+	await t.close();
+	t = undefined;
+
+	// Installed-artifact qualification also exercises the real codemode worker.
+	const { createCodemodeExtension, createMcpExtension, createToolSearchExtension } = await import("@earendil-works/pi-coding-agent");
+	const { getCurrentTools } = await import("@earendil-works/pi-ai");
+	for (const exposure of ["direct", "codemode", "deferred", "hidden"]) {
+		const fixture = harness.createMcpFixture({ exposure, tools: [{
+			tool: { name: "echo", description: "Native fixture echo", inputSchema: { type: "object" } },
+			response: { content: [{ type: "text", text: "native response" }], structuredContent: { value: "stored" } },
+		}] });
+		let nestedMocks = 0;
+		t = await createTestSession({
+			extensionFactories: [createCodemodeExtension({ models: false }), createToolSearchExtension(), createMcpExtension(fixture.extensionOptions)],
+			mockTools: { read: async () => { nestedMocks++; return "nested mock"; } },
+		});
+		const declarations = [];
+		const nativePrepare = t.session.agent.prepareRequest;
+		t.session.agent.prepareRequest = async (request, signal) => {
+			const update = await nativePrepare?.(request, signal);
+			declarations.push(getCurrentTools((update?.context ?? request.context).messages).map(tool => tool.name));
+			return update;
+		};
+		const name = "mcp__fixture__echo";
+		try {
+			if (exposure === "hidden") t.session.setActiveToolsByName([...t.session.getActiveToolNames(), "codemode"]);
+			const actions = exposure === "direct" ? [calls(name)]
+				: exposure === "deferred" ? [calls("tool_search", { query: "echo" }), calls(name)]
+					: [calls("codemode", { code: 'text(await searchTools("echo"));' }), calls("codemode", { code: 'const r=await tools.mcp__fixture__echo({}); text(r); store("value",r.structuredContent.value);' })];
+			await t.run(when("Native exposure", [...actions, says("Done.")]));
+			assert.equal(t.session.getCallableToolNames().includes(name), exposure !== "hidden");
+			assert.equal(fixture.calls.length, exposure === "hidden" ? 0 : 1);
+			if (exposure === "direct") assert.ok(declarations[0].includes(name));
+			if (exposure === "deferred") {
+				assert.ok(!declarations[0].includes(name));
+				assert.ok(declarations[1].includes(name));
+			}
+			if (exposure === "codemode" || exposure === "hidden") assert.ok(declarations.every(names => !names.includes(name)));
+			if (exposure === "hidden") assert.equal(t.events.toolResultsFor("codemode")[1].isError, true);
+			else assert.equal(t.events.toolResultsFor(name)[0].isError, false);
+			if (exposure === "codemode") {
+				await t.run(when("Read stored result and mock", [calls("codemode", { code: 'text(load("value")); text(await tools.read({path:"missing.txt"}));' }), says("Done.")]));
+				assert.equal(nestedMocks, 1);
+				const result = t.events.toolResultsFor("codemode").at(-1);
+				assert.equal(result.isError, false);
+				assert.match(result.text, /stored/);
+				assert.match(result.text, /nested mock/);
+				assert.equal(t.events.toolResultsFor("read")[0].parentToolCallId, result.toolCallId);
+				assert.equal(t.events.toolResultsFor("read")[0].mocked, true);
+				assert.deepEqual(t.events.toolResultsFor(name)[0].structuredContent.structuredContent, { value: "stored" });
+			}
+		} finally { await t.close(); t = undefined; }
+		assert.equal(fixture.closed, true);
+	}
+	assert.equal(networkRequests, 0);
+	console.log("native: MCP exposure, codemode, nested mocks, structured results, store/load, shutdown OK");
 } finally {
 	try {
-		t?.dispose();
+		await t?.close();
 	} finally {
 		globalThis.fetch = originalFetch;
 	}

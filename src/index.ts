@@ -10,6 +10,8 @@ export { when, calls, says } from "./playbook.js";
 
 // Session
 export { createTestSession } from "./session.js";
+export { createMcpFixture } from "./mcp-fixture.js";
+export type { McpFixture, McpFixtureOptions, McpFixtureTool, McpFixtureCall, McpFixtureResponse } from "./mcp-fixture.js";
 
 // Sandbox
 export { verifySandboxInstall } from "./sandbox.js";

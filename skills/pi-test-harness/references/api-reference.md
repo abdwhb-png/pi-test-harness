@@ -1,6 +1,6 @@
 # API reference
 
-Type definitions and the event-collection API for `@abdwhb-png/pi-test-harness` v0.9.0 (Pi 1.1.x). Use this as a reference when authoring assertions or tracing through snippets.
+Type definitions and the event-collection API for `@abdwhb-png/pi-test-harness` development checkout (Pi 1.1.x). Use this as a reference when authoring assertions or tracing through snippets.
 
 ## Table of contents
 
@@ -45,7 +45,7 @@ The package's top-level exports are:
 ```typescript
 import {
   // Session testing
-  createTestSession,
+  createTestSession, createMcpFixture,
   // Playbook builders
   when, calls, says,
   // Sandbox / subprocess
@@ -102,7 +102,8 @@ interface TestSession {
   cwd: string;                    // working directory
   events: TestEvents;             // all collected events
   playbook: { consumed: number; remaining: number };
-  dispose(): void;                // cleanup temp dir and session
+  close(): Promise<void>;         // await native shutdown, then clean owned state
+  dispose(): void;                // legacy synchronous cleanup
 }
 ```
 
@@ -199,13 +200,15 @@ The shape returned by `t.events.toolCallsFor(name)`. Use it when you want to ass
 interface ToolCallRecord {
   step: number;                              // playbook step index
   toolName: string;
+  toolCallId: string;
+  parentToolCallId?: string;
   input: Record<string, unknown>;           // the params object from calls(tool, params)
   blocked: boolean;                          // true if an extension hook blocked this call
   blockReason?: string;                      // the reason string if blocked
 }
 ```
 
-**Source**: verified against `dist/types.d.ts` in v0.9.0. Note the field is `input` (not `params`); it carries the params you passed via `calls(tool, params)`. There is no `toolCallId` on `ToolCallRecord` — pair with results by index (e.g. `toolCallsFor(name)[i]` ↔ `toolResultsFor(name)[i]`) since both arrays are in call order.
+**Source**: `src/types.ts` in the development checkout. Note the field is `input` (not `params`); it carries the params you passed via `calls(tool, params)`. Correlate `toolCallId` within the current run. `parentToolCallId` identifies native nested calls.
 
 ### Reading it
 
@@ -221,7 +224,7 @@ expect(c.blocked).toBe(false);              // no hook blocked
 
 ### Pairing calls with results
 
-Pair `toolCallsFor(name)` with `toolResultsFor(name)` by index — both arrays are in call order:
+Correlate calls and results by `toolCallId` within a run. Nested calls also carry `parentToolCallId`. Playbook IDs restart between runs. For a single call:
 
 ```typescript
 const call = t.events.toolCallsFor("summarize_doc")[0];
@@ -258,15 +261,17 @@ interface ToolResultRecord {
   step: number;                              // playbook step index
   toolName: string;
   toolCallId: string;
+  parentToolCallId?: string;
   text: string;                              // concatenated text content
   content: Array<{ type: string; text?: string }>;
   isError: boolean;
+  structuredContent?: unknown;
   details?: unknown;                         // optional details object (mock-provided or real)
   mocked: boolean;                           // true if mockTools handled it
 }
 ```
 
-**Source**: verified against `dist/types.d.ts` in v0.9.0.
+**Source**: `src/types.ts` in the development checkout.
 
 ### Reading it
 
@@ -300,7 +305,7 @@ interface UICallRecord {
 }
 ```
 
-**Source**: verified against `dist/types.d.ts` in v0.9.0. `notify` calls are recorded here too — `returnValue` is typically omitted for outbound methods.
+**Source**: `src/types.ts` in the development checkout. `notify` calls are recorded here too — `returnValue` is typically omitted for outbound methods.
 
 ### Reading it
 
@@ -338,7 +343,7 @@ expect(text).toMatch(/couldn't|unable|sorry/i); // friendly message present
 type MockToolHandler =
   | string
   | ToolResult
-  | ((params: Record<string, unknown>) => string | ToolResult);
+  | ((params: Record<string, unknown>) => string | ToolResult | Promise<string | ToolResult>);
 ```
 
 | Variant      | Returns                                        | Use case                            |
@@ -437,7 +442,7 @@ Exported for source compatibility with upstream consumers, but **not promised** 
 
 ```typescript
 import {
-  createTestSession, when, calls, says,
+  createTestSession, createMcpFixture, when, calls, says,
 } from "@abdwhb-png/pi-test-harness";
 
 const t = await createTestSession({ mockTools: { bash: "ok" } });
@@ -478,3 +483,9 @@ afterEach(() => {
 ```
 
 For isolation across tests, give each one a unique DB path (typically `mkdtempSync` + test name). Files get cleaned by the OS at process exit; this is just about avoiding `EPERM` mid-suite.
+
+## Native fixture and shutdown
+
+`createMcpFixture({ name?, exposure?, toolExposure?, tools })` returns `extensionOptions`, `calls` and `closed`. Each tool entry has a native MCP `tool` definition and a fixed or asynchronous `response`. See the [README](../../../README.md#native-mcpcodemode) for the complete contract and composition example.
+
+`await t.close()` settles any active run, restores interception and awaits native shutdown before removing owned temporary state. A supplied cwd is preserved. Repeated closes share one operation. New runs reject once closure starts. Closing after legacy `dispose()` rejects.

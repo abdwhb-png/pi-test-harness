@@ -2,7 +2,7 @@
 
 Test harness for [pi](https://github.com/earendil-works/pi-coding-agent) extensions — in-process session testing with playbook-driven model mocking, package install verification, and subprocess mocking.
 
-**Pi 1.1.x only.** Harness 0.9.0 requires `@earendil-works/pi-agent-core@~1.1.0`, `@earendil-works/pi-ai@~1.1.0`, and `@earendil-works/pi-coding-agent@~1.1.0`. Its public API is unchanged. Older Pi lines are no longer supported by this release.
+**Pi 1.1.x only.** This checkout adds native MCP/codemode capabilities for the next minor release. It uses the five Pi peers listed below, qualified against exact Pi 1.1.0. The published 0.9.0 release predates these additions.
 
 ## Why
 
@@ -27,6 +27,10 @@ The repository and published package include the canonical `pi-test-harness` ski
 - `@earendil-works/pi-coding-agent` ~1.1.0
 - `@earendil-works/pi-ai` ~1.1.0
 - `@earendil-works/pi-agent-core` ~1.1.0
+- `@earendil-works/pi-codemode` ~1.1.0
+- `@earendil-works/pi-mcp` ~1.1.0
+
+The codemode peer prevents fresh installs of Pi 1.1 from selecting codemode 1.2 through Pi's broader transitive range. That combination removes exports Pi 1.1 imports and fails before a session starts. Keep native packages on the declared 1.1 line.
 
 ### Supported Pi line
 
@@ -486,7 +490,8 @@ Returns `Promise<TestSession>`.
 | `cwd` | `string` | Working directory |
 | `events` | `TestEvents` | All collected events |
 | `playbook` | `{ consumed, remaining }` | Playbook consumption state |
-| `dispose()` | `void` | Cleanup temp dir and session |
+| `close()` | `Promise<void>` | Await native shutdown, then remove owned temporary state |
+| `dispose()` | `void` | Legacy synchronous cleanup without shutdown hooks |
 
 ### `verifySandboxInstall(options)`
 
@@ -599,29 +604,74 @@ describe("pi-planner", () => {
 });
 ```
 
+## Native MCP/codemode
+
+Compose native Pi factories explicitly. The harness controls the external MCP peer and records Pi's execution events. Pi owns discovery, exposure, schema validation and the codemode engine.
+
+```typescript
+import { createCodemodeExtension, createMcpExtension } from "@earendil-works/pi-coding-agent";
+import { createMcpFixture, createTestSession, when, calls, says } from "@abdwhb-png/pi-test-harness";
+
+const fixture = createMcpFixture({
+  name: "demo",
+  exposure: "codemode",
+  tools: [{
+    tool: {
+      name: "echo",
+      description: "Echo a value",
+      inputSchema: { type: "object", properties: { value: { type: "string" } }, required: ["value"] },
+      outputSchema: { type: "object", properties: { value: { type: "string" } }, required: ["value"] },
+    },
+    response: async args => ({
+      content: [{ type: "text", text: String(args.value) }],
+      structuredContent: { value: args.value },
+    }),
+  }],
+});
+const t = await createTestSession({
+  extensionFactories: [createCodemodeExtension({ models: false }), createMcpExtension(fixture.extensionOptions)],
+});
+try {
+  await t.run(when("Discover and call", [
+    calls("codemode", { code: 'text(await searchTools("echo")); const r=await tools.mcp__demo__echo({value:"hello"}); text(r);' }),
+    says("Done."),
+  ]));
+  expect(fixture.calls).toMatchObject([{ toolName: "echo", arguments: { value: "hello" } }]);
+  const child = t.events.toolResultsFor("mcp__demo__echo")[0];
+  expect(child.parentToolCallId).toBe(t.events.toolResultsFor("codemode")[0].toolCallId);
+  expect(child.structuredContent).toMatchObject({ structuredContent: { value: "hello" } });
+  expect(child.mocked).toBe(false);
+} finally {
+  await t.close();
+}
+expect(fixture.closed).toBe(true);
+```
+
+`createMcpFixture` accepts native MCP `Tool` definitions and a fixed response or asynchronous handler per tool. Return a native `CallToolResult` to represent success or an MCP tool error (`isError: true`). Return `{ error: { code, message, data? } }` for a JSON-RPC protocol error. A thrown handler becomes an explicit internal protocol error. Unknown methods/tools fail instead of returning a default success. The fixture supports initialization, discovery and tool calls only. It uses Pi's official in-memory transport and never spawns the configured placeholder command.
+
+`extensionOptions` returns fresh options for each factory composition, with configuration and logs isolated to the session cwd. Use one fixture per test session. `calls` records received MCP calls in receipt order, including request IDs and cloned arguments. `closed` is true before connection and after every transport closes.
+
+Use `exposure: "direct"` for immediate model declarations, `"deferred"` with an explicit `createToolSearchExtension()` for discovery followed by direct calls, `"codemode"` for scripted calls, or `"hidden"` for unreachable tools. `toolExposure` accepts Pi's per-tool overrides. Inspect the prepared transcript with Pi's `getCurrentTools()` when asserting model declarations. Callable tool names and model declarations can differ.
+
+`mockTools` handles direct and nested execution consistently, including asynchronous handlers and `structuredContent`. It replaces execution only, so Pi's validation and hooks still apply. `mocked` is true only if that call actually executed a mock handler. A controlled MCP fixture response is a real native adapter execution and is therefore unmocked. Native MCP results expose the complete MCP result envelope through the Pi result's `structuredContent`, hence the two levels in the example.
+
+Call and result records contain `toolCallId` and optional `parentToolCallId`. Correlate by ID within the current run rather than completion order. Playbook IDs restart on each run. Raw native events remain in `events.all`. Concurrent runs on one session reject. Existing `.then()` callbacks retain their execution-time result semantics, while `events.toolResults` contains final post-hook results.
+
 ## Platform Notes
 
 ### Windows + SQLite (EPERM in afterEach)
 
-`session.dispose()` does **not** fire `session_shutdown`. Pi emits that event at lifecycle boundaries such as reload and CLI shutdown. Extensions that rely on shutdown hooks to close SQLite databases can keep those files locked until reload or process shutdown.
+Use `await t.close()` in teardown. It aborts and settles an active run, restores temporary interception, awaits Pi's native `session_shutdown`, then removes the harness-owned temporary directory. A supplied `cwd` is preserved. Repeated `close()` calls share the same operation, and subsequent `run()` calls reject.
 
-On Windows, this means `rmSync(dbPath)` in `afterEach` throws `EPERM`. Use `safeRmSync` instead:
+`dispose()` remains synchronous for existing consumers and does not emit shutdown. Calling `close()` after `dispose()` rejects because the native extension context has already been invalidated. For native workflows, use `close()` throughout the session's lifetime.
 
 ```typescript
-import { safeRmSync } from "@abdwhb-png/pi-test-harness";
-
-afterEach(() => {
-  // Dispose session first, then attempt file cleanup
-  t?.dispose();
-  safeRmSync(dbPath);
-  safeRmSync(dbPath + "-wal");
-  safeRmSync(dbPath + "-shm");
+afterEach(async () => {
+  await t?.close();
 });
 ```
 
-Open file handles are released when the process exits. Use unique DB paths per test (e.g., `mkdtempSync` + test name) for isolation.
-
-`safeRmSync` only swallows `EPERM` and `EBUSY` — all other errors still propagate.
+For legacy synchronous cleanup, `safeRmSync` ignores only `EPERM` and `EBUSY`. It does not release database handles or replace a shutdown hook. Native shutdown errors are propagated by the harness where Pi exposes them, but Pi may report extension-handler failures through its error channel. Assert actual resource closure when it matters.
 
 ---
 
@@ -654,7 +704,8 @@ Known intentional gaps:
 - No real LLM/provider calls; the harness replaces the model boundary by design.
 - No compatibility testing for the deprecated `@mariozechner/*` Pi packages or Pi outside 1.1.x. The qualification baseline is pinned to Pi 1.1.0.
 - Concurrent/parallel tool execution is not yet deeply exercised. Today the playbook emits one tool call per assistant message, which is deterministic and good for most extension tests. To test true Pi parallelism, the harness should grow a grouped/batched call action that emits multiple `toolCall` blocks in one assistant message, then assert result collection by `toolCallId` rather than completion order.
-- Native MCP/codemode workflows and concurrent `createMockPi()` subprocess consumers are not qualified by this release.
+- Native MCP/codemode qualification covers the in-memory transport and explicit Pi factories. OAuth, `models.*`, resources, reconnection and real stdio/HTTP transport workflows are outside this coverage. Third-party extension/package workflows and concurrent `createMockPi()` subprocess consumers are excluded.
+- The new source scenarios and installed artifacts run in CI on Node 22/24 Linux/Windows, with installed-artifact coverage on Bun 1.3.14 Linux. Windows must pass before publication. A configured CI job is not evidence that the current revision has passed it.
 
 ## Releasing
 

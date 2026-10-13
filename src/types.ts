@@ -34,12 +34,13 @@ export interface ToolResult {
 	content: Array<{ type: string; text: string }>;
 	details?: unknown;
 	isError?: boolean;
+	structuredContent?: unknown;
 }
 
 export type MockToolHandler =
 	| string
 	| ToolResult
-	| ((params: Record<string, unknown>) => string | ToolResult);
+	| ((params: Record<string, unknown>) => string | ToolResult | Promise<string | ToolResult>);
 
 export interface MockUIConfig {
 	confirm?: boolean | ((title: string, message: string) => boolean);
@@ -58,6 +59,8 @@ export interface MockUIConfig {
 export interface ToolCallRecord {
 	step: number;
 	toolName: string;
+	toolCallId: string;
+	parentToolCallId?: string;
 	input: Record<string, unknown>;
 	blocked: boolean;
 	blockReason?: string;
@@ -67,10 +70,12 @@ export interface ToolResultRecord {
 	step: number;
 	toolName: string;
 	toolCallId: string;
+	parentToolCallId?: string;
 	text: string;
 	content: Array<{ type: string; text?: string }>;
 	isError: boolean;
 	details?: unknown;
+	structuredContent?: unknown;
 	mocked: boolean;
 }
 
@@ -127,6 +132,8 @@ export interface TestSession {
 	events: TestEvents;
 	/** Playbook consumption state */
 	playbook: { consumed: number; remaining: number };
+	/** Await native shutdown and transport closure before cleaning up owned state. */
+	close(): Promise<void>;
 	/** Cleanup */
 	dispose(): void;
 }

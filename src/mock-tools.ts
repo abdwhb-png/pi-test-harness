@@ -48,16 +48,16 @@ export function isBlockedError(err: unknown): boolean {
 	return false;
 }
 
-function normalizeMockResult(
+async function normalizeMockResult(
 	handler: MockToolHandler,
 	params: Record<string, unknown>,
-): ToolResult {
+): Promise<ToolResult> {
 	let raw: string | ToolResult;
 
 	if (typeof handler === "string") {
 		raw = handler;
 	} else if (typeof handler === "function") {
-		raw = handler(params);
+		raw = await handler(params);
 	} else {
 		raw = handler;
 	}
@@ -72,77 +72,45 @@ function normalizeMockResult(
 	return raw;
 }
 
-/**
- * Intercept tool execution for mocked tools.
- *
- * Unlike the old approach, this does NOT emit tool_call/tool_result hooks
- * manually — AgentSession's beforeToolCall/afterToolCall handles that.
- * The mock only replaces execute() to return controlled values. Result
- * recording is handled by the session subscriber from tool_execution_end
- * events (which carry the final afterToolCall-modified result).
- *
- * Returns a Set of mocked tool names for the session subscriber to set the
- * mocked flag on recorded results, plus a Set of toolCallIds whose mock
- * returned a ToolResult with isError:true. The wrapper returns content/details
- * to Pi, so the subscriber preserves the mock's error intent in collected records.
- */
+/** Shared execution replacement for request tools and native nested tool definitions. */
+export function createMockExecute(
+	toolName: string,
+	handler: MockToolHandler,
+	state: PlaybookState,
+	mockedIds: Set<string>,
+): AgentTool["execute"] {
+	return async (toolCallId, params) => {
+		mockedIds.add(toolCallId);
+		const result = await normalizeMockResult(handler, params as Record<string, unknown>);
+		fireThenCallback(state, toolCallId, {
+			step: state.consumed,
+			toolName,
+			toolCallId,
+			text: result.content.filter(c => c.type === "text").map(c => c.text).join("\n"),
+			content: result.content,
+			isError: result.isError ?? false,
+			details: result.details,
+			structuredContent: result.structuredContent,
+			mocked: true,
+		});
+		return { ...result, details: result.details ?? {} } as Awaited<ReturnType<AgentTool["execute"]>>;
+	};
+}
+
+/** Wrap request-snapshot tools without replacing Pi's validation or hooks. */
 export function interceptToolExecution(
 	tools: AgentTool[],
 	mockTools: Record<string, MockToolHandler>,
 	playbookState: PlaybookState,
 	propagateErrors: boolean,
-	mockedErrorToolCallIds = new Set<string>(),
-): {
-	tools: AgentTool[];
-	mockedNames: ReadonlySet<string>;
-	mockedErrorToolCallIds: ReadonlySet<string>;
-} {
-	const mockedNames = new Set(Object.keys(mockTools));
-
-	const wrapped = tools.map((tool) => {
-		const mockHandler = mockTools[tool.name];
-		if (!mockHandler) {
-			return wrapForCollection(tool, playbookState, propagateErrors);
-		}
-
-		return {
-			...tool,
-			execute: async (
-				toolCallId: string,
-				params: Record<string, unknown>,
-				_signal?: AbortSignal,
-				_onUpdate?: any,
-			) => {
-				const result = normalizeMockResult(mockHandler, params);
-				const text = result.content
-					.filter((c) => c.type === "text")
-					.map((c) => c.text)
-					.join("\n");
-				if (result.isError) {
-					// Keep the mock's error intent available to the session subscriber.
-					mockedErrorToolCallIds.add(toolCallId);
-				}
-				// fireThenCallback fires synchronously so .then() sees real data
-				fireThenCallback(playbookState, toolCallId, {
-					step: playbookState.consumed,
-					toolName: tool.name,
-					toolCallId,
-					text,
-					content: result.content,
-					isError: result.isError ?? false,
-					details: result.details,
-					mocked: true,
-				});
-
-				return {
-					content: result.content,
-					details: result.details ?? {},
-				};
-			},
-		} as AgentTool;
+	mockedIds: Set<string>,
+): AgentTool[] {
+	return tools.map(tool => {
+		const handler = mockTools[tool.name];
+		return handler === undefined
+			? wrapForCollection(tool, playbookState, propagateErrors)
+			: { ...tool, execute: createMockExecute(tool.name, handler, playbookState, mockedIds) };
 	});
-
-	return { tools: wrapped, mockedNames, mockedErrorToolCallIds };
 }
 
 /**
@@ -189,6 +157,7 @@ function wrapForCollection(
 					content: result.content ?? [],
 					isError: !!(result as any).isError,
 					details: result.details,
+					structuredContent: result.structuredContent,
 					mocked: false,
 				});
 

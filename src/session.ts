@@ -18,10 +18,13 @@ import {
 	SessionManager,
 	SettingsManager,
 	type AgentSessionEvent,
+	type ToolDefinition,
 	ModelRuntime,
+	AgentSessionRuntime,
+	createAgentSessionFromServices,
 } from "@earendil-works/pi-coding-agent";
 import { createPlaybookStreamFn, type PlaybookState } from "./playbook.js";
-import { interceptToolExecution } from "./mock-tools.js";
+import { createMockExecute, interceptToolExecution } from "./mock-tools.js";
 import { createMockUIContext } from "./mock-ui.js";
 import { createEventCollector } from "./events.js";
 import { formatPlaybookDiagnostic } from "./diagnostics.js";
@@ -46,6 +49,7 @@ export async function createTestSession(
 	}
 
 	const settingsManager = SettingsManager.inMemory();
+	let interceptDefinitions = () => {};
 	const loader = new DefaultResourceLoader({
 		cwd,
 		agentDir: cwd, // Use cwd as agent dir to avoid touching real ~/.pi
@@ -107,21 +111,26 @@ export async function createTestSession(
 
 	const events = createEventCollector();
 	let currentStep = 0;
-	let mockedToolNames: ReadonlySet<string> = new Set();
-	// Preserve the mock's error intent when its wrapper returns content/details.
-	let mockedErrorToolCallIds: ReadonlySet<string> = new Set();
+	let mockedIds = new Set<string>();
+	const callsById = new Map<string, ToolCallRecord>();
+	const blockedById = new Map<string, string>();
 
 	session.subscribe((event: AgentSessionEvent) => {
 		events.all.push(event);
 
 		if (event.type === "tool_execution_start") {
+			// Nested execution dereferences the public definition after this event.
+			interceptDefinitions();
 			const record: ToolCallRecord = {
 				step: currentStep,
 				toolName: event.toolName,
+				toolCallId: event.toolCallId,
+				parentToolCallId: event.parentToolCallId,
 				input: (event as any).args ?? {},
 				blocked: false,
 			};
 			events.toolCalls.push(record);
+			callsById.set(event.toolCallId, record);
 		}
 
 		if (event.type === "tool_execution_end") {
@@ -131,28 +140,26 @@ export async function createTestSession(
 					?.map((c: any) => c.text)
 					?.join("\n") ?? "";
 
-			if (event.isError) {
-				const lastCall = events.toolCalls[events.toolCalls.length - 1];
-				if (lastCall && lastCall.toolName === event.toolName) {
-					if (resultText.includes("blocked") || resultText.includes("Plan mode")) {
-						lastCall.blocked = true;
-						lastCall.blockReason = resultText;
-					}
-				}
+			const call = callsById.get(event.toolCallId);
+			if (call && blockedById.has(event.toolCallId)) {
+				call.blocked = true;
+				call.blockReason = blockedById.get(event.toolCallId);
 			}
 
 			// Record the final result (after afterToolCall modifications).
 			// Always push — each tool_execution_end has a unique toolCallId
 			// within a run, and the subscriber is the only source of results.
-			const isMocked = mockedToolNames.has(event.toolName);
+			const isMocked = mockedIds.has(event.toolCallId);
 			events.toolResults.push({
 				step: currentStep,
 				toolName: event.toolName,
 				toolCallId: event.toolCallId,
+				parentToolCallId: event.parentToolCallId,
 				text: resultText,
 				content: event.result?.content ?? [],
-				isError: event.isError || mockedErrorToolCallIds.has(event.toolCallId),
+				isError: event.isError,
 				details: event.result?.details,
+				structuredContent: event.result?.structuredContent,
 				mocked: isMocked,
 			});
 		}
@@ -163,6 +170,16 @@ export async function createTestSession(
 	});
 
 	let playbookState: PlaybookState | null = null;
+	let running = false;
+	let runSettled: Promise<void> = Promise.resolve();
+	let disposed = false;
+	let closePromise: Promise<void> | undefined;
+	const services = { cwd, agentDir: cwd, modelRuntime, settingsManager, resourceLoader: loader, diagnostics: [] };
+	const runtime = new AgentSessionRuntime(session, services, async ({ sessionManager }) => ({
+		...await createAgentSessionFromServices({ services, sessionManager, model: playbookModel }),
+		services,
+		diagnostics: [],
+	}));
 
 	const mockUI = createMockUIContext(options.mockUI, events.ui);
 
@@ -188,6 +205,11 @@ export async function createTestSession(
 		},
 
 		async run(...turns: Turn[]): Promise<void> {
+			if (disposed || closePromise) throw new Error("Test session is closed");
+			if (running) throw new Error("A test session run is already active");
+			running = true;
+			let finishRun!: () => void;
+			runSettled = new Promise(resolve => { finishRun = resolve; });
 			const { streamFn, state } = createPlaybookStreamFn(turns);
 			playbookState = state;
 
@@ -195,25 +217,44 @@ export async function createTestSession(
 			session.agent.streamFunction = streamFn;
 
 			const effectiveMockTools = options.mockTools ?? {};
-			const errorIds = new Set<string>();
+			mockedIds = new Set<string>();
+			callsById.clear();
+			blockedById.clear();
+			const runner = session.extensionRunner;
+			const originalEmitToolCall = runner?.emitToolCall;
+			if (runner && originalEmitToolCall) {
+				runner.emitToolCall = async function (event) {
+					const result = await originalEmitToolCall.call(this, event);
+					if (result?.block) blockedById.set(event.toolCallId, result.reason || "Tool execution was blocked");
+					return result;
+				};
+			}
+			const definitions = new Map<ToolDefinition, ToolDefinition["execute"]>();
+			interceptDefinitions = () => {
+				for (const [name, handler] of Object.entries(effectiveMockTools)) {
+					const definition = session.getToolDefinition(name);
+					if (!definition || definitions.has(definition)) continue;
+					definitions.set(definition, definition.execute);
+					definition.execute = createMockExecute(name, handler, state, mockedIds);
+				}
+			};
 			const originalPrepareRequest = session.agent.prepareRequest;
 			session.agent.prepareRequest = async (request, signal) => {
 				const update = await originalPrepareRequest?.(request, signal);
 				const context = update?.context ?? request.context;
-				const result = interceptToolExecution(
+				const tools = interceptToolExecution(
 					context.tools ?? [],
 					effectiveMockTools,
 					state,
 					propagateErrors,
-					errorIds,
+					mockedIds,
 				);
-				mockedToolNames = result.mockedNames;
-				mockedErrorToolCallIds = errorIds;
 				// Pi executes this request snapshot after rebuilding its tool registry.
-				return { ...update, context: { ...context, tools: result.tools } };
+				return { ...update, context: { ...context, tools } };
 			};
 			try {
 				for (const turn of turns) {
+					if (closePromise) break;
 					currentStep = state.consumed;
 					await session.prompt(turn.prompt);
 					await session.agent.waitForIdle();
@@ -227,7 +268,25 @@ export async function createTestSession(
 				}
 			} finally {
 				session.agent.prepareRequest = originalPrepareRequest;
+				interceptDefinitions = () => {};
+				for (const [definition, execute] of definitions) definition.execute = execute;
+				if (runner && originalEmitToolCall) runner.emitToolCall = originalEmitToolCall;
+				running = false;
+				finishRun();
 			}
+		},
+
+		close(): Promise<void> {
+			if (closePromise) return closePromise;
+			if (disposed) return Promise.reject(new Error("Test session was disposed before close()"));
+			closePromise = (async () => {
+				await session.abort();
+				await runSettled;
+				await runtime.dispose();
+				disposed = true;
+				if (ownsTmpDir) fs.rmSync(cwd, { recursive: true, force: true });
+			})();
+			return closePromise;
 		},
 
 		/**
@@ -238,6 +297,8 @@ export async function createTestSession(
 		 * Use `safeRmSync` for extension-owned files locked on Windows.
 		 */
 		dispose(): void {
+			if (disposed || closePromise) return;
+			disposed = true;
 			session.dispose();
 			if (ownsTmpDir && fs.existsSync(cwd)) {
 				fs.rmSync(cwd, { recursive: true, force: true });
