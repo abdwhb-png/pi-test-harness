@@ -9,7 +9,7 @@ metadata:
   package_author: "abdwhb-png (maintained fork of marcfargas' MIT-licensed pi-test-harness; pi itself is by Mario Zechner / earendil-works)"
   skill_author: abdwhb-png
   source: https://github.com/abdwhb-png/pi-test-harness
-  version: "0.9.0"
+  version: "0.10.0"
   languages: [TypeScript, JavaScript]
   category: testing
 ---
@@ -18,7 +18,7 @@ metadata:
 
 `@abdwhb-png/pi-test-harness` is a maintained fork of Marc Fargas' MIT-licensed [pi-test-harness](https://github.com/marcfargas/pi-test-harness) for [Pi](https://github.com/earendil-works/pi-coding-agent) extensions, targeting **Pi 1.1.x only**. It keeps the upstream API and credits Marc Fargas' original work (pi-powershell, pi-tramp, pi-planner, etc.; note that pi itself is maintained by Mario Zechner / earendil-works, not the same person). Its job: let you exercise **real** extension code paths (tool registration, hooks, session events, UI prompts) in any test runner with zero LLM calls and full determinism.
 
-> **Verify before use**: the existing harness guidance uses v0.9.0 (Pi 1.1.x) as its release baseline. The native MCP/codemode section describes additions in the development checkout for the next minor release, not published 0.9.0. Match the README and installed package version before using a snippet. Note: the harness version (e.g. `0.9.0`) and the Pi version (e.g. `1.1.x`) are **independent release tracks** — do not compare them numerically.
+> **Verify before use**: this guide targets harness v0.10.0 (Pi 1.1.x), including native MCP/codemode workflows. Match the README and installed package version before using a snippet. Note: the harness version (e.g. `0.10.0`) and the Pi version (e.g. `1.1.x`) are **independent release tracks** — do not compare them numerically.
 
 ## The mental model: "let pi be pi"
 
@@ -375,7 +375,7 @@ The key-validation behavior (throws on typos like `{ ouptut: ... }`), the concur
 
 ## Native MCP/codemode and asynchronous cleanup
 
-The development checkout adds native workflows for the next minor release. Published 0.9.0 does not include them. Compose `createCodemodeExtension({ models: false })`, `createMcpExtension(fixture.extensionOptions)` and optionally `createToolSearchExtension()` explicitly in `extensionFactories`. Use `createMcpFixture()` for native tool schemas and deterministic external responses. The [README native example](../../README.md#native-mcpcodemode) documents the complete composition and error response forms.
+Harness 0.10.0 includes native workflows. The 0.9.0 release predates these additions. Compose `createCodemodeExtension({ models: false })`, `createMcpExtension(fixture.extensionOptions)` and optionally `createToolSearchExtension()` explicitly in `extensionFactories`. Use `createMcpFixture()` for native tool schemas and deterministic external responses. The [README native example](../../README.md#native-mcpcodemode) documents the complete composition and error response forms.
 
 Native observations retain `toolCallId`, `parentToolCallId` and `structuredContent`. Native MCP structured results contain the MCP response envelope. `mocked` reflects actual handler execution for direct and nested calls. Fixture responses are not `mockTools` replacements. IDs are scoped to a run, and overlapping runs reject.
 
@@ -407,7 +407,7 @@ Pi's `tool_call` / `tool_result` hooks **do** fire for mocked tools through `Age
 `createMockPi` replaces only the `pi` executable. Load or import the real extension code that spawns it; never paste a local copy of the subprocess helper into the test, because that can pass while the extension is broken.
 
 **6. Trusting the snapshot blindly.**
-The release baseline is v0.9.0 (Pi 1.1.x), while the native MCP/codemode section describes the development checkout. Before using those additions, confirm that the installed artifact includes them. On a version bump, reconcile the skill with the matching README and package metadata.
+This guide targets harness v0.10.0 (Pi 1.1.x). Confirm that the installed artifact matches the guide before using its snippets. On a version bump, reconcile the skill with the matching README and package metadata.
 
 ## Test-layer summary
 

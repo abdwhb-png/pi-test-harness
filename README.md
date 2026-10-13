@@ -2,7 +2,7 @@
 
 Test harness for [pi](https://github.com/earendil-works/pi-coding-agent) extensions — in-process session testing with playbook-driven model mocking, package install verification, and subprocess mocking.
 
-**Pi 1.1.x only.** This checkout adds native MCP/codemode capabilities for the next minor release. It uses the five Pi peers listed below, qualified against exact Pi 1.1.0. The published 0.9.0 release predates these additions.
+**Pi 1.1.x only.** Harness 0.10.0 adds native MCP/codemode capabilities. It uses the five Pi peers listed below, qualified against exact Pi 1.1.0. The 0.9.0 release predates these additions.
 
 ## Why
 
@@ -38,13 +38,14 @@ The harness version and the Pi version are independent tracks — do not compare
 
 | Harness | Supported Pi | Notes                                                    |
 | ------- | ------------ | -------------------------------------------------------- |
+| 0.10.x  | 1.1.x        | Native MCP/codemode, nested mocks and asynchronous shutdown |
 | 0.9.x   | 1.1.x        | Request-time interception and Node/Bun artifact qualification |
 | 0.8.x   | 0.85.x       | Loader parity for top-level-await entrypoints            |
 | 0.7.x   | 0.84.x       | Pi 0.84 support                                          |
 
 ### Ways to install it
 
-1. **From npm (after publication):** `sfw npm install --save-dev @abdwhb-png/pi-test-harness@0.9.0`. This is the packed artifact a consumer receives.
+1. **From npm (after publication):** `sfw npm install --save-dev @abdwhb-png/pi-test-harness@0.10.0`. This is the packed artifact a consumer receives.
 2. **Pre-release:** changes that need testing before a final version are published under the `next` dist-tag, so `npm install --save-dev @abdwhb-png/pi-test-harness@next` picks one up without inventing a `0.x` release.
 3. **Local checkout (harness development):** `bun link` in the harness repo, then `bun link @abdwhb-png/pi-test-harness` in the consumer, or point the dependency at a `file:` path. Consumers read `dist/`, so run `npm run build` after editing `src/`, and never commit a lockfile that resolves to the link.
 

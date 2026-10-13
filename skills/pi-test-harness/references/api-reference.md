@@ -1,6 +1,6 @@
 # API reference
 
-Type definitions and the event-collection API for `@abdwhb-png/pi-test-harness` development checkout (Pi 1.1.x). Use this as a reference when authoring assertions or tracing through snippets.
+Type definitions and the event-collection API for `@abdwhb-png/pi-test-harness` v0.10.0 (Pi 1.1.x). Use this as a reference when authoring assertions or tracing through snippets.
 
 ## Table of contents
 
@@ -221,7 +221,7 @@ interface ToolCallRecord {
 }
 ```
 
-**Source**: `src/types.ts` in the development checkout. Note the field is `input` (not `params`); it carries the params you passed via `calls(tool, params)`. Correlate `toolCallId` within the current run. `parentToolCallId` identifies native nested calls.
+**Source**: `src/types.ts` in harness v0.10.0. Note the field is `input` (not `params`); it carries the params you passed via `calls(tool, params)`. Correlate `toolCallId` within the current run. `parentToolCallId` identifies native nested calls.
 
 ### Reading it
 
@@ -284,7 +284,7 @@ interface ToolResultRecord {
 }
 ```
 
-**Source**: `src/types.ts` in the development checkout.
+**Source**: `src/types.ts` in harness v0.10.0.
 
 ### Reading it
 
@@ -318,7 +318,7 @@ interface UICallRecord {
 }
 ```
 
-**Source**: `src/types.ts` in the development checkout. `notify` calls are recorded here too — `returnValue` is typically omitted for outbound methods.
+**Source**: `src/types.ts` in harness v0.10.0. `notify` calls are recorded here too — `returnValue` is typically omitted for outbound methods.
 
 ### Reading it
 
