@@ -2,7 +2,7 @@
 
 Test harness for [pi](https://github.com/earendil-works/pi-coding-agent) extensions — in-process session testing with playbook-driven model mocking, package install verification, and subprocess mocking.
 
-**Pi 1.5.x.** Harness 0.11.0 targets Pi 1.5.0. Local qualification uses the personal Pi fork, including cleanup when a startup callback rejects. Published upstream Pi 1.5.0 retains a known startup cleanup regression demonstrated by the native shutdown test.
+**Pi 1.5.x.** Harness 0.11.0 targets the official Pi 1.5.0 packages. Closing during asynchronous startup cancels at the request preparation boundary, before model or tool execution, without depending on a patched Pi runtime.
 
 ## Why
 
@@ -30,7 +30,7 @@ The repository and published package include the canonical `pi-test-harness` ski
 - `@earendil-works/pi-codemode` ~1.5.0
 - `@earendil-works/pi-mcp` ~1.5.0
 
-The codemode peer prevents fresh installs of Pi 1.1 from selecting codemode 1.2 through Pi's broader transitive range. That combination removes exports Pi 1.1 imports and fails before a session starts. Keep native packages on the declared 1.1 line.
+Explicit native-package peers keep coding-agent, agent-core, AI, MCP and codemode on the same supported Pi 1.5 line.
 
 ### Supported Pi line
 
@@ -38,7 +38,7 @@ The harness version and the Pi version are independent tracks — do not compare
 
 | Harness | Supported Pi | Notes                                                    |
 | ------- | ------------ | -------------------------------------------------------- |
-| 0.11.x  | 1.5.x        | Pi 1.5 compatibility; qualified with the personal fork |
+| 0.11.x  | 1.5.x        | Official Pi 1.5 compatibility and cancellation during startup |
 | 0.10.x  | 1.1.x        | Native MCP/codemode, nested mocks and asynchronous shutdown |
 | 0.9.x   | 1.1.x        | Request-time interception and Node/Bun artifact qualification |
 | 0.8.x   | 0.85.x       | Loader parity for top-level-await entrypoints            |
@@ -693,7 +693,7 @@ CI runs in three stages:
 
 1. **Verify** on Linux/Node 24: lint, typecheck, unit tests, build, audit (`sfw npm audit`), and the installed-consumer smoke (`npm run test:consumer`).
 2. **Integration matrix** after verify passes: Linux + Windows, Node 22 + 24, Pi 1.5.0 (locked by `devDependencies`).
-3. **Bun qualification** after verify passes: Linux, Bun 1.3.14, path-loaded extension cases (`npm run test:bun`), build, and the installed-consumer smoke (`npm run test:consumer -- --runtime=bun`). Bun's extension-loading cases cover the top-level-await regression that the Node runner cannot reproduce.
+3. **Bun qualification** after verify passes: Linux, Bun 1.4.3, path-loaded extension cases (`npm run test:bun`), build, and the installed-consumer smoke (`npm run test:consumer -- --runtime=bun`). Bun's extension-loading cases cover the top-level-await regression that the Node runner cannot reproduce.
 
 The consumer smoke installs the root npm tarball and the minimal `dist/package.tgz` independently through Socket Firewall. Exact peer versions come from `devDependencies`, rather than resolving an unspecified new patch from the peer ranges. The same scenario checks package metadata, declarations, the bundled skill, runtime identity, real and mocked tools, single hook emission, hook result modifications, refusal before mock execution, consecutive runs, and callback restoration after success and failure. Session execution rejects unexpected fetch requests and makes no LLM calls.
 
@@ -704,10 +704,10 @@ The unit suite covers the playbook DSL and subprocess `createMockPi()` shim. The
 Known intentional gaps:
 
 - No real LLM/provider calls; the harness replaces the model boundary by design.
-- No compatibility testing for the deprecated `@mariozechner/*` Pi packages or Pi outside 1.5.x. The qualification baseline is pinned to Pi 1.5.0 with the personal fork startup cleanup fix.
+- No compatibility testing for the deprecated `@mariozechner/*` Pi packages or Pi outside 1.5.x. The qualification baseline is pinned to the official Pi 1.5.0 packages.
 - Concurrent/parallel tool execution is not yet deeply exercised. Today the playbook emits one tool call per assistant message, which is deterministic and good for most extension tests. To test true Pi parallelism, the harness should grow a grouped/batched call action that emits multiple `toolCall` blocks in one assistant message, then assert result collection by `toolCallId` rather than completion order.
 - Native MCP/codemode qualification covers the in-memory transport and explicit Pi factories. OAuth, `models.*`, resources, reconnection and real stdio/HTTP transport workflows are outside this coverage. Third-party extension/package workflows and concurrent `createMockPi()` subprocess consumers are excluded.
-- The new source scenarios and installed artifacts run in CI on Node 22/24 Linux/Windows, with installed-artifact coverage on Bun 1.3.14 Linux. Windows must pass before publication. A configured CI job is not evidence that the current revision has passed it.
+- The new source scenarios and installed artifacts run in CI on Node 22/24 Linux/Windows, with installed-artifact coverage on Bun 1.4.3 Linux. Windows must pass before publication. A configured CI job is not evidence that the current revision has passed it.
 
 ## Releasing
 

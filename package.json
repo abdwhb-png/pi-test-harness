@@ -1,7 +1,7 @@
 {
   "name": "@abdwhb-png/pi-test-harness",
   "version": "0.11.0",
-  "description": "Test harness for pi extensions \u2014 in-process session testing, package install verification, and subprocess mocking",
+  "description": "Test harness for pi extensions — in-process session testing, package install verification, and subprocess mocking",
   "author": "Abdullah Alblushi (fork)",
   "license": "MIT",
   "type": "module",
@@ -67,7 +67,8 @@
     "@earendil-works/pi-mcp": "~1.5.0"
   },
   "overrides": {
-    "read-yaml-file": "2.1.0"
+    "read-yaml-file": "2.1.0",
+    "minimatch@>=7 <11": "11.0.4"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",
@@ -83,6 +84,6 @@
     "typebox": "1.3.7",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.1",
-    "vitest": "5.0.1"
+    "vitest": "5.0.3"
   }
 }
