@@ -1,5 +1,14 @@
 # @abdwhb-png/pi-test-harness
 
+## 0.11.0
+
+### Minor Changes
+
+- Support official Pi 1.5.x with exact Pi 1.5.0 development dependencies and matching bundled guides. Harness and Pi versions remain independent release tracks.
+- Cancel runs closed during asynchronous startup at the existing request preparation boundary. This prevents model and tool execution and permits shutdown without relying on Pi's startup callback error cleanup. Preserve callback restoration, shared shutdown and active-tool cancellation contracts.
+- Qualify both installed artifacts under Node and Bun; update the Bun CI baseline to 1.4.3 while retaining the Linux/Windows Node 22/24 matrix.
+- Update Vitest to 5.0.3 and its affected Vite dependency. Override vulnerable Minimatch 7–10 dependencies to 11.0.4 for development tooling. ESLint's configuration matching and file discovery use retained `Minimatch.match` APIs; the linter and complete test suite verify the repository's consumers. Keep this override until those tooling owners adopt a patched dependency range. No production dependency was added.
+
 ## 0.10.0
 
 ### Minor Changes

@@ -240,7 +240,9 @@ export async function createTestSession(
 			};
 			const originalPrepareRequest = session.agent.prepareRequest;
 			session.agent.prepareRequest = async (request, signal) => {
+				if (closePromise) throw new Error("Test session is closed");
 				const update = await originalPrepareRequest?.(request, signal);
+				if (closePromise) throw new Error("Test session is closed");
 				const context = update?.context ?? request.context;
 				const tools = interceptToolExecution(
 					context.tools ?? [],
@@ -256,12 +258,7 @@ export async function createTestSession(
 				for (const turn of turns) {
 					if (closePromise) break;
 					currentStep = state.consumed;
-					await session.prompt(turn.prompt, {
-						preflightResult(disposition) {
-							// Pi reports this after async preflight and before starting the agent.
-							if (disposition === "started" && closePromise) throw new Error("Test session is closed");
-						},
-					});
+					await session.prompt(turn.prompt);
 					await session.agent.waitForIdle();
 				}
 
