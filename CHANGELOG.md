@@ -1,5 +1,10 @@
 # @abdwhb-png/pi-test-harness
 
+## Unreleased
+
+- Prepare local 0.11.0 artifacts for Pi 1.5.x, with exact 1.5.0 development dependencies and matching bundled guides.
+- Qualify both installed artifacts on Linux with Node 26 and Bun 1.4.3. The complete integration suite uses the personal Pi fork, which restores idle state after a startup callback rejects. Upstream Pi 1.5.0 retains that cleanup regression. Windows and the Node 22/24 CI matrix have not been rerun for this candidate.
+
 ## 0.10.0
 
 ### Minor Changes
